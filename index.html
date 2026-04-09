@@ -113,7 +113,6 @@ const CAT = {
 };
 const MCOLORS = ["#5E5CE6","#E8705A","#4ECDC4","#F9CA24","#A29BFE","#FD79A8","#00CEC9","#FDCB6E","#6C5CE7"];
 const ADMIN_EMAIL = "allan.rischard@sheriffprojects.com";
-const MAX_HISTORY = 15;
 const NEEDS_DUE   = ["Weekly","Monthly","Backlog"];
 const POLL_MS     = 5000;
 
@@ -244,19 +243,6 @@ function Toast({toasts,th}){
   </div>;
 }
 
-function UndoBar({history,onUndo,th}){
-  if(!history.length) return null;
-  const last=history[history.length-1];
-  return <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:500,
-    background:th.surface2,border:`1px solid ${th.border}`,borderRadius:14,padding:"10px 18px",
-    display:"flex",alignItems:"center",gap:14,boxShadow:th.shadow,minWidth:260}}>
-    <span style={{fontSize:13,color:th.textSub,flex:1}}>
-      <span style={{color:th.textMute,fontSize:10}}>{history.length} · </span>{last.label}
-    </span>
-    <button onClick={onUndo} style={{background:"#5E5CE6",border:"none",borderRadius:8,
-      color:"#fff",fontWeight:700,fontSize:11,padding:"6px 14px",cursor:"pointer"}}>↩ Undo</button>
-  </div>;
-}
 
 function ErrorBanner({msg,onClose}){
   if(!msg) return null;
@@ -272,7 +258,7 @@ function ErrorBanner({msg,onClose}){
 /* ═══════════════════════════════════════
    TV VIEW
 ═══════════════════════════════════════ */
-function TVView({tasks,members,onSwitch,dark,onToggleTheme,th}){
+function TVView({tasks,members,onSwitch,dark,onToggleTheme,th,onToggle,onDelete}){
   const [clock,setClock]=useState(new Date());
   const [tvMode,setTvMode]=useState("all");
   const [zoom,setZoom]=useState(()=>parseFloat(localStorage.getItem("tvZoom")||"1"));
@@ -308,11 +294,11 @@ function TVView({tasks,members,onSwitch,dark,onToggleTheme,th}){
       </div>
       {/* Mode toggle */}
       <div style={{display:"flex",background:th.surface2,border:`1px solid ${th.border}`,borderRadius:10,padding:3,gap:2,marginLeft:8}}>
-        {[{id:"all",label:"📋 ALL"},{id:"daily",label:"🔥 DAILY"}].map(m=>(
+        {[{id:"all",label:"📋 ALL"},{id:"daily",label:"🔥 DAILY"},{id:"team",label:"👥 TEAM"}].map(m=>(
           <button key={m.id} onClick={()=>setTvMode(m.id)} style={{padding:"6px 18px",borderRadius:8,border:"none",
             cursor:"pointer",fontWeight:800,fontSize:11,letterSpacing:".06em",transition:"all .2s",
             fontFamily:"'SIGNS',system-ui",
-            background:tvMode===m.id?(m.id==="daily"?"linear-gradient(135deg,#FF453A,#FF9F0A)":"linear-gradient(135deg,#5E5CE6,#BF5AF2)"):"transparent",
+            background:tvMode===m.id?(m.id==="daily"?"linear-gradient(135deg,#FF453A,#FF9F0A)":m.id==="team"?"linear-gradient(135deg,#0A84FF,#32ADE6)":"linear-gradient(135deg,#5E5CE6,#BF5AF2)"):"transparent",
             color:tvMode===m.id?"#fff":th.textMute,boxShadow:tvMode===m.id?"0 2px 12px rgba(0,0,0,.2)":"none"}}>
             {m.label}
           </button>
@@ -342,22 +328,24 @@ function TVView({tasks,members,onSwitch,dark,onToggleTheme,th}){
       <button onClick={onSwitch} style={btnStyle}>⚙ MANAGE</button>
     </div>
     {tvMode==="all"
-      ?<TVAllMode tasks={tasks} pending={pending} done={done} members={members} th={th}/>
-      :<TVDailyMode tasks={tasks} members={members} th={th}/>}
+      ?<TVAllMode tasks={tasks} pending={pending} done={done} members={members} th={th} onToggle={onToggle} onDelete={onDelete}/>
+      :tvMode==="daily"
+      ?<TVDailyMode tasks={tasks} members={members} th={th} onToggle={onToggle} onDelete={onDelete}/>
+      :<TVTeamMode tasks={tasks} members={members} th={th} onToggle={onToggle} onDelete={onDelete}/>}
   </div>;
 }
 
-function TVAllMode({tasks,pending,done,members,th}){
+function TVAllMode({tasks,pending,done,members,th,onToggle,onDelete}){
   const mStats=members.map(m=>({name:m,total:tasks.filter(t=>t.assignee===m).length,done:tasks.filter(t=>t.assignee===m&&t.done).length}));
   return <div style={{flex:1,display:"grid",gridTemplateColumns:"1fr 1fr 1fr 240px",overflow:"hidden"}}>
     <div style={{overflowY:"auto",padding:"20px 16px 20px 24px",borderRight:`1px solid ${th.border3}`,display:"flex",flexDirection:"column",gap:14}}>
       {["Daily","Weekly"].map(cat=>{const g=pending.filter(t=>t.category===cat);if(!g.length)return null;
-        return <TVGroup key={cat} cat={cat} tasks={g} members={members} th={th}/>;
+        return <TVGroup key={cat} cat={cat} tasks={g} members={members} th={th} onToggle={onToggle}/>;
       })}
     </div>
     <div style={{overflowY:"auto",padding:"20px 16px",borderRight:`1px solid ${th.border3}`,display:"flex",flexDirection:"column",gap:14}}>
       {["Monthly","Backlog"].map(cat=>{const g=pending.filter(t=>t.category===cat);if(!g.length)return null;
-        return <TVGroup key={cat} cat={cat} tasks={g} members={members} th={th}/>;
+        return <TVGroup key={cat} cat={cat} tasks={g} members={members} th={th} onToggle={onToggle}/>;
       })}
     </div>
     <div style={{overflowY:"auto",padding:"20px 16px",borderRight:`1px solid ${th.border3}`,display:"flex",flexDirection:"column",gap:6}}>
@@ -368,7 +356,7 @@ function TVAllMode({tasks,pending,done,members,th}){
           <span className="font-signs" style={{fontWeight:800,fontSize:11,color:"#32D74B"}}>DONE</span>
           <span style={{fontFamily:"monospace",fontSize:9,color:"rgba(50,215,75,.6)"}}>({done.length})</span>
         </div>
-        {done.map(t=><TVRow key={t.id} task={t} members={members} th={th}/>)}
+        {done.map(t=><TVRow key={t.id} task={t} members={members} th={th} onToggle={onToggle} onDelete={onDelete}/>)}
       </>}
       {!done.length&&<div style={{color:th.textGhost,fontSize:13,fontWeight:700,textAlign:"center",marginTop:40,
         fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>NO TASKS DONE YET</div>}
@@ -411,7 +399,7 @@ function TVAllMode({tasks,pending,done,members,th}){
   </div>;
 }
 
-function TVDailyMode({tasks,members,th}){
+function TVDailyMode({tasks,members,th,onToggle,onDelete}){
   const withDaily=members.filter(m=>tasks.some(t=>t.assignee===m&&t.category==="Daily"));
   const cols=Math.min(4,Math.max(2,Math.ceil(Math.sqrt(withDaily.length||1))));
   return <div style={{flex:1,overflowY:"auto",padding:"24px 32px"}}>
@@ -439,7 +427,8 @@ function TVDailyMode({tasks,members,th}){
             <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
-            {pend.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:8,
+            {pend.map(t=><div key={t.id} onClick={()=>onToggle&&onToggle(t)}
+              style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",
               background:th.card2,border:`1px solid ${th.border}`,borderRadius:8,padding:"7px 10px"}}>
               <div style={{width:10,height:10,borderRadius:"50%",flexShrink:0,border:"2px solid #FF453A"}}/>
               <span style={{fontSize:12,color:th.text2,fontWeight:800,flex:1,fontFamily:"'SIGNS',system-ui"}}>{t.title}</span>
@@ -453,6 +442,9 @@ function TVDailyMode({tasks,members,th}){
               <span style={{fontSize:12,color:th.textMute,fontWeight:800,textDecoration:"line-through",flex:1,
                 fontFamily:"'SIGNS',system-ui"}}>{t.title}</span>
               {t.done_at&&<span style={{fontFamily:"monospace",fontSize:9,color:"#32D74B",flexShrink:0}}>{fmtTime(t.done_at)}</span>}
+              {onDelete&&<button onClick={e=>{e.stopPropagation();onDelete(t.id);}}
+                style={{background:"none",border:"none",cursor:"pointer",padding:"1px 3px",fontSize:11,
+                opacity:.6,color:"#FF453A",lineHeight:1}} title="Supprimer">🗑</button>}
             </div>)}
           </div>
           {allDone&&<div style={{background:"rgba(50,215,75,.1)",border:"1px solid rgba(50,215,75,.3)",
@@ -465,7 +457,64 @@ function TVDailyMode({tasks,members,th}){
   </div>;
 }
 
-function TVGroup({cat,tasks,members,th}){
+function TVTeamMode({tasks,members,th,onToggle,onDelete}){
+  const cols=Math.min(4,Math.max(2,Math.ceil(Math.sqrt(members.length||1))));
+  return <div style={{flex:1,overflowY:"auto",padding:"24px 32px"}}>
+    <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:16}}>
+      {members.map(m=>{
+        const all=tasks.filter(t=>t.assignee===m);
+        if(!all.length) return null;
+        const pend=all.filter(t=>!t.done),dn=all.filter(t=>t.done);
+        const pct=all.length?Math.round(dn.length/all.length*100):0;
+        const c=mColor(m,members),allDone=all.length>0&&pct===100;
+        return <div key={m} style={{background:allDone?"rgba(50,215,75,.06)":th.card,
+          border:`1px solid ${allDone?"rgba(50,215,75,.3)":c+"30"}`,
+          borderTop:`3px solid ${allDone?"#32D74B":c}`,borderRadius:14,padding:"16px 16px 14px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+            <div style={{width:44,height:44,borderRadius:"50%",background:c,flexShrink:0,
+              display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:18,
+              boxShadow:`0 0 0 2px ${th.bg},0 0 0 4px ${c}50`}}>{m[0].toUpperCase()}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div className="font-signs" style={{fontWeight:900,fontSize:17,color:th.text,lineHeight:1,marginBottom:3,
+                whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.toUpperCase()}</div>
+              <div style={{fontSize:11,color:th.textMute}}>{dn.length}/{all.length} done</div>
+            </div>
+            <div className="font-signs" style={{fontWeight:900,fontSize:22,color:allDone?"#32D74B":pct>50?"#FF9F0A":c}}>{pct}%</div>
+          </div>
+          <div style={{height:3,background:th.border,borderRadius:3,overflow:"hidden",marginBottom:8}}>
+            <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:260,overflowY:"auto"}}>
+            {pend.map(t=>{const cfg=CAT[t.category];return <div key={t.id} onClick={()=>onToggle&&onToggle(t)}
+              style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",
+              background:th.card2,border:`1px solid ${cfg.color+"20"}`,borderLeft:`2px solid ${cfg.color}`,
+              borderRadius:8,padding:"6px 10px"}}>
+              <div style={{width:9,height:9,borderRadius:"50%",flexShrink:0,border:`2px solid ${cfg.color}`}}/>
+              <span style={{fontSize:11,color:th.text2,fontWeight:700,flex:1,fontFamily:"'SIGNS',system-ui",
+                whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.title}</span>
+              <span style={{fontSize:8,color:cfg.color,fontFamily:"'SIGNS',system-ui",fontWeight:700,flexShrink:0}}>{t.category.slice(0,1)}</span>
+            </div>;})}
+            {dn.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:8,
+              background:th.card2,border:`1px solid ${th.border3}`,borderRadius:8,padding:"6px 10px",opacity:.45}}>
+              <div style={{width:9,height:9,borderRadius:"50%",flexShrink:0,background:"#32D74B"}}/>
+              <span style={{fontSize:11,color:th.textMute,fontWeight:700,textDecoration:"line-through",flex:1,
+                fontFamily:"'SIGNS',system-ui",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.title}</span>
+              {onDelete&&<button onClick={e=>{e.stopPropagation();onDelete(t.id);}}
+                style={{background:"none",border:"none",cursor:"pointer",padding:"1px 3px",fontSize:10,
+                opacity:.6,color:"#FF453A",lineHeight:1,flexShrink:0}}>🗑</button>}
+            </div>)}
+          </div>
+          {allDone&&<div style={{background:"rgba(50,215,75,.1)",border:"1px solid rgba(50,215,75,.3)",
+            borderRadius:8,padding:"6px",textAlign:"center",marginTop:8}}>
+            <span className="font-signs" style={{fontSize:13,color:"#32D74B",fontWeight:800}}>✅ ALL DONE!</span>
+          </div>}
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
+function TVGroup({cat,tasks,members,th,onToggle}){
   return <div>
     <div style={{display:"inline-flex",alignItems:"center",gap:7,marginBottom:8,background:CAT[cat].bg,
       border:`1px solid ${CAT[cat].color}30`,borderRadius:9,padding:"5px 14px"}}>
@@ -474,18 +523,22 @@ function TVGroup({cat,tasks,members,th}){
       <span style={{fontFamily:"monospace",fontSize:9,color:CAT[cat].color+"80"}}>({tasks.length})</span>
     </div>
     <div style={{display:"flex",flexDirection:"column",gap:4}}>
-      {tasks.map(t=><TVRow key={t.id} task={t} members={members} th={th}/>)}
+      {tasks.map(t=><TVRow key={t.id} task={t} members={members} th={th} onToggle={onToggle}/>)}
     </div>
   </div>;
 }
 
-function TVRow({task,members,th}){
+function TVRow({task,members,th,onToggle,onDelete}){
   const cfg=CAT[task.category];
   return <div style={{background:task.done?th.card4:th.card,border:`1px solid ${task.done?th.border3:cfg.color+"25"}`,
     borderLeft:`3px solid ${task.done?"#32D74B":cfg.color}`,borderRadius:8,padding:"8px 11px",
-    display:"flex",alignItems:"center",gap:10,opacity:task.done?.5:1}}>
-    <div style={{width:14,height:14,borderRadius:"50%",flexShrink:0,border:`2px solid ${task.done?"#32D74B":cfg.color}`,
-      background:task.done?"rgba(50,215,75,.15)":"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
+    display:"flex",alignItems:"center",gap:10,opacity:task.done?.5:1,
+    cursor:onToggle&&!task.done?"pointer":"default",transition:"opacity .15s"}}
+    onClick={()=>{ if(onToggle&&!task.done) onToggle(task); }}>
+    <div onClick={e=>{e.stopPropagation();if(onToggle)onToggle(task);}}
+      style={{width:14,height:14,borderRadius:"50%",flexShrink:0,border:`2px solid ${task.done?"#32D74B":cfg.color}`,
+      background:task.done?"rgba(50,215,75,.15)":"transparent",display:"flex",alignItems:"center",justifyContent:"center",
+      cursor:"pointer"}}>
       {task.done&&<span style={{color:"#32D74B",fontSize:7,fontWeight:800}}>✓</span>}
     </div>
     <div style={{flex:1,fontWeight:800,fontSize:12,color:task.done?th.textGhost:th.text2,
@@ -497,6 +550,10 @@ function TVRow({task,members,th}){
       {task.done&&task.done_at
         ?<span style={{fontFamily:"monospace",fontSize:8,color:"#32D74B",minWidth:70}}>{fmtTime(task.done_at)}</span>
         :<Badge category={task.category} due_date={task.due_date}/>}
+      {task.done&&onDelete&&
+        <button onClick={e=>{e.stopPropagation();onDelete(task.id);}}
+          style={{background:"none",border:"none",cursor:"pointer",padding:"2px 4px",fontSize:13,opacity:.5,
+          lineHeight:1,color:"#FF453A"}} title="Supprimer">🗑</button>}
     </div>
   </div>;
 }
@@ -641,7 +698,7 @@ function AdminPanel({members,setMembers,tasks,setTasks,pwdHash,setPwdHash,onClos
 const selS=(th)=>({background:th.card2,border:`1px solid ${th.border}`,borderRadius:8,color:th.textSub,fontSize:12,padding:"8px 10px",cursor:"pointer",flexShrink:0});
 const inpBase=(th)=>({background:th.input,border:`1px solid ${th.border}`,borderRadius:9,color:th.text,fontSize:13,padding:"10px 12px",width:"100%",outline:"none"});
 
-function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setError,onSwitch,pushHistory,dark,onToggleTheme,th}){
+function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setError,onSwitch,dark,onToggleTheme,th}){
   const [tab,setTab]=useState("tasks");
   const [mode,setMode]=useState("all");
   const [showForm,setShowForm]=useState(false), [editTask,setEditTask]=useState(null);
@@ -656,39 +713,35 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
 
   const toggleDone=useCallback(async task=>{
     const newDone=!task.done;
-    pushHistory(`${newDone?"Complete":"Uncomplete"} "${task.title}"`,{tasks:[...tasks]});
     const updated={...task,done:newDone,done_at:newDone?new Date().toISOString():null};
     setTasks(p=>p.map(t=>t.id===task.id?updated:t));
     try{ await api.updateTask(updated); }
     catch(e){ setTasks(p=>p.map(t=>t.id===task.id?task:t)); setError("Failed to update task"); }
-  },[tasks,setTasks,setError,pushHistory]);
+  },[tasks,setTasks,setError]);
 
   const deleteTask=useCallback(async id=>{
     const t=tasks.find(x=>x.id===id);
     const ok=await confirm(`Delete "${t?.title}"?`); if(!ok) return;
-    pushHistory(`Delete "${t?.title}"`,{tasks:[...tasks]});
     setTasks(p=>p.filter(t=>t.id!==id));
     try{ await api.deleteTask(id); }
     catch(e){ setTasks(p=>[...p,t]); setError("Failed to delete task"); }
-  },[tasks,confirm,setTasks,setError,pushHistory]);
+  },[tasks,confirm,setTasks,setError]);
 
   const saveTask=useCallback(async form=>{
     const escalated=escalate(form);
     if(form.id){
-      pushHistory(`Edit "${form.title}"`,{tasks:[...tasks]});
       setTasks(p=>p.map(t=>t.id===form.id?{...t,...escalated}:t));
       try{ await api.updateTask(escalated); }
       catch(e){ setError("Failed to update task"); }
     } else {
       try{
         const created=await api.addTask(escalated);
-        pushHistory(`Add "${escalated.title}"`,{tasks:[...tasks]});
         setTasks(p=>[...p,created]);
         setNewHL(created.id); setTimeout(()=>setNewHL(null),2000);
       }catch(e){ setError("Failed to add task: "+e.message); }
     }
     setShowForm(false); setEditTask(null);
-  },[tasks,setTasks,setError,pushHistory]);
+  },[tasks,setTasks,setError]);
 
   const ss=selS(th), ib=inpBase(th);
 
@@ -986,7 +1039,6 @@ function App(){
   const [loading,setLoading]= useState(true);
   const [error,setError]    = useState(null);
   const [toasts,setToasts]  = useState([]);
-  const [history,setHistory]= useState([]);
   const [dark,setDark]      = useState(()=>localStorage.getItem("theme")!=="light");
   const prevDone            = useRef(new Set());
 
@@ -995,10 +1047,6 @@ function App(){
   const toggleTheme = useCallback(()=>{
     setDark(d=>{ const next=!d; localStorage.setItem("theme",next?"dark":"light"); return next; });
   },[]);
-
-  const pushHistory = useCallback((label, snap) => {
-    setHistory(h => [...h.slice(-(MAX_HISTORY-1)), {label, ...snap}]);
-  }, []);
 
   useEffect(()=>{ sha256("rodeokid").then(setPwdHash); },[]);
 
@@ -1050,22 +1098,29 @@ function App(){
     <div className="font-signs" style={{color:th.textGhost,fontSize:14,letterSpacing:".1em"}}>LOADING TEAM BOARD…</div>
   </div>;
 
+  const tvToggle=useCallback(async task=>{
+    const updated={...task,done:!task.done,done_at:!task.done?new Date().toISOString():null};
+    setTasks(p=>p.map(t=>t.id===task.id?updated:t));
+    try{ await api.updateTask(updated); }
+    catch(e){ setTasks(p=>p.map(t=>t.id===task.id?task:t)); setError("Erreur mise à jour"); }
+  },[setTasks,setError]);
+
+  const tvDelete=useCallback(async id=>{
+    setTasks(p=>p.filter(t=>t.id!==id));
+    try{ await api.deleteTask(id); }
+    catch(e){ setError("Erreur suppression"); }
+  },[setTasks,setError]);
+
   return <div style={{fontFamily:"'SIGNS',system-ui,sans-serif"}}>
     <Toast toasts={toasts} th={th}/>
-    <UndoBar history={history} th={th} onUndo={()=>{
-      setHistory(h=>{if(!h.length)return h;
-        const last=h[h.length-1];
-        if(last.tasks)setTasks(last.tasks);
-        if(last.members)setMembers(last.members);
-        return h.slice(0,-1);});
-    }}/>
     <ErrorBanner msg={error} onClose={()=>setError(null)}/>
     {view==="tv"
       ?<TVView tasks={tasks} members={members} dark={dark} onToggleTheme={toggleTheme} th={th}
+          onToggle={tvToggle} onDelete={tvDelete}
           onSwitch={()=>setView("manager")}/>
       :<ManagerView tasks={tasks} setTasks={setTasks} members={members} setMembers={setMembers}
           pwdHash={pwdHash} setPwdHash={setPwdHash} setError={setError}
-          pushHistory={pushHistory} dark={dark} onToggleTheme={toggleTheme} th={th}
+          dark={dark} onToggleTheme={toggleTheme} th={th}
           onSwitch={()=>setView("tv")}/>}
   </div>;
 }
