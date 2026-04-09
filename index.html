@@ -280,10 +280,12 @@ function TVView({tasks,members,onSwitch,dark,onToggleTheme,th}){
   const sorted=sortTasks(tasks),pending=sorted.filter(t=>!t.done),done=sorted.filter(t=>t.done);
   const pct=tasks.length?Math.round(done.length/tasks.length*100):0;
   const dailyN=pending.filter(t=>t.category==="Daily").length;
-  const ZOOMS=[1,1.25,1.5,2];
-  const cycleZoom=()=>{
-    const next=ZOOMS[(ZOOMS.indexOf(zoom)+1)%ZOOMS.length];
-    setZoom(next); localStorage.setItem("tvZoom",next);
+  const ZOOMS=[1,1.25,1.5];
+  const zoomUp=()=>{
+    const idx=ZOOMS.indexOf(zoom); if(idx<ZOOMS.length-1){const next=ZOOMS[idx+1];setZoom(next);localStorage.setItem("tvZoom",next);}
+  };
+  const zoomDown=()=>{
+    const idx=ZOOMS.indexOf(zoom); if(idx>0){const next=ZOOMS[idx-1];setZoom(next);localStorage.setItem("tvZoom",next);}
   };
 
   const btnStyle={background:th.surface2,border:`1px solid ${th.border}`,borderRadius:9,
@@ -334,8 +336,9 @@ function TVView({tasks,members,onSwitch,dark,onToggleTheme,th}){
         <div style={{fontSize:9,color:th.textGhost,marginTop:2}}>{clock.getSeconds()}s</div>
       </div>
       <ThemeSwitch dark={dark} onToggle={onToggleTheme}/>
-      <button onClick={cycleZoom} style={{...btnStyle,color:"#FF9F0A"}}>
-        🔍 {zoom===1?"100%":zoom===1.25?"125%":zoom===1.5?"150%":"200%"}</button>
+      <button onClick={zoomDown} style={{...btnStyle,color:"#FF9F0A",opacity:zoom===1?.35:1}} disabled={zoom===1}>🔍−</button>
+      <span style={{color:"#FF9F0A",fontSize:11,fontWeight:700,minWidth:32,textAlign:"center"}}>{zoom===1?"100%":zoom===1.25?"125%":"150%"}</span>
+      <button onClick={zoomUp} style={{...btnStyle,color:"#FF9F0A",opacity:zoom===1.5?.35:1}} disabled={zoom===1.5}>🔍+</button>
       <button onClick={onSwitch} style={btnStyle}>⚙ MANAGE</button>
     </div>
     {tvMode==="all"
