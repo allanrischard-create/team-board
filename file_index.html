@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Team Board ⚡</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#080808;height:100%;font-family:system-ui,sans-serif}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:#2C2C2E;border-radius:4px}
+select,input,button{outline:none;font-family:inherit}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes newTask{0%,100%{box-shadow:0 0 0 0 #32D74B00}50%{box-shadow:0 0 0 3px #32D74B50}}
+@keyframes slideIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback, memo } = React;
+
+/* ─── CONFIG ─── */
+const CATEGORIES = ["Daily","Weekly","Monthly","Backlog"];
+const CAT = {
+  Daily:   { color:"#FF453A", bg:"rgba(255,69,58,.14)",  rank:0, icon:"🔥", hint:"today"      },
+  Weekly:  { color:"#FF9F0A", bg:"rgba(255,159,10,.14)", rank:1, icon:"📅", hint:"this week"  },
+  Monthly: { color:"#5E5CE6", bg:"rgba(94,92,230,.14)",  rank:2, icon:"🗓️", hint:"this month" },
+  Backlog: { color:"#636366", bg:"rgba(99,99,102,.12)",  rank:3, icon:"📌", hint:"someday"    },
+};
+const MCOLORS = ["#5E5CE6","#E8705A","#4ECDC4","#F9CA24","#A29BFE","#FD79A8","#00CEC9","#FDCB6E","#6C5CE7"];
+const ADMIN_EMAIL = "allan.rischard@sheriffprojects.com";
+const MAX_HISTORY = 15;
+const NEEDS_DUE   = ["Weekly","Monthly","Backlog"];
+const POLL_MS     = 5000; // polling interval for TV real-time
+
+/* ─── CRYPTO ─── */
+async function sha256(str) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+
+/* ─── HELPERS ─── */
+const today     = () => { const d=new Date(); d.setHours(0,0,0,0); return d; };
+const todayStr  = () => today().toISOString().split("T")[0];
+const fmtTime   = iso => new Date(iso).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+const fmtDate   = iso => new Date(iso).toLocaleDateString("fr-FR",{day:"2-digit",month:"short"});
+const fmtFull   = iso => `${fmtDate(iso)} ${fmtTime(iso)}`;
+const mColor    = (n,m) => MCOLORS[Math.max(0,m.indexOf(n))%MCOLORS.length];
+const sortTasks = ts => [...ts].sort((a,b)=>a.done!==b.done?(a.done?1:-1):CAT[a.category].rank-CAT[b.category].rank);
+
+function fmtDue(iso){
+  const d=new Date(iso); d.setHours(0,0,0,0);
+  const diff=Math.round((d-today())/86400000);
+  if(diff<0)  return{text:`${Math.abs(diff)}d overdue`,color:"#FF453A"};
+  if(diff===0)return{text:"Today",color:"#FF9F0A"};
+  if(diff===1)return{text:"Tomorrow",color:"#FF9F0A"};
+  if(diff<=7) return{text:`In ${diff}d`,color:"#32D74B"};
+  return{text:fmtDate(iso),color:"#636366"};
+}
+
+function escalate(task){
+  if(task.done||!task.due_date) return task;
+  const due=new Date(task.due_date); due.setHours(0,0,0,0);
+  const diff=Math.round((due-today())/86400000);
+  const cat=diff<=0?"Daily":diff<=7?"Weekly":(task.original_category??task.category);
+  return cat===task.category?task:{...task,category:cat};
+}
+
+/* ─── API CALLS ─── */
+async function apiFetch(url, options={}) {
+  const res = await fetch(url, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
+const api = {
+  getTasks:    ()       => apiFetch("/api/tasks"),
+  getMembers:  ()       => apiFetch("/api/members"),
+  addTask:     (data)   => apiFetch("/api/tasks", { method:"POST", body:data }),
+  updateTask:  (data)   => apiFetch("/api/tasks", { method:"PUT",  body:data }),
+  deleteTask:  (id)     => apiFetch(`/api/tasks?id=${id}`, { method:"DELETE" }),
+  addMember:   (name)   => apiFetch("/api/members", { method:"POST", body:{name} }),
+  deleteMember:(name)   => apiFetch(`/api/members?name=${encodeURIComponent(name)}`, { method:"DELETE" }),
+};
+
+let uid = 100;
+
+/* ─── ATOMS ─── */
+function Avatar({name,members,size=32,ring=true}){
+  const c=mColor(name,members);
+  return <div style={{width:size,height:size,borderRadius:"50%",background:c,flexShrink:0,
+    display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:size*.38,
+    boxShadow:ring?`0 0 0 2px #0D0D0D,0 0 0 3.5px ${c}60`:"none"}}>{name[0].toUpperCase()}</div>;
+}
+
+function Badge({category,due_date}){
+  const c=CAT[category],due=due_date?fmtDue(due_date):null;
+  return <span style={{display:"inline-flex",alignItems:"center",gap:4,background:c.bg,color:c.color,
+    border:`1px solid ${c.color}35`,padding:"2px 8px",borderRadius:20,fontSize:9,fontWeight:700,whiteSpace:"nowrap"}}>
+    {c.icon} {category.toUpperCase()}
+    {due&&<span style={{color:due.color,fontWeight:600,fontSize:8,borderLeft:`1px solid ${c.color}40`,paddingLeft:4}}>{due.text}</span>}
+  </span>;
+}
+
+function ConfirmModal({message,onConfirm,onCancel}){
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:400,
+    display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onCancel}>
+    <div style={{background:"#141414",border:"1px solid #2C2C2E",borderRadius:16,padding:"24px 22px",
+      width:300,display:"flex",flexDirection:"column",gap:16}} onClick={e=>e.stopPropagation()}>
+      <div style={{fontSize:13,color:"#F2F2F7",lineHeight:1.5}}>{message}</div>
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={onCancel} style={{flex:1,padding:"10px",borderRadius:9,border:"1px solid #2C2C2E",
+          background:"transparent",color:"#8E8E93",fontWeight:700,fontSize:12,cursor:"pointer"}}>CANCEL</button>
+        <button onClick={onConfirm} style={{flex:1,padding:"10px",borderRadius:9,border:"none",
+          background:"#FF453A",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>CONFIRM</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function useConfirm(){
+  const [state,setState]=useState(null);
+  const confirm=(msg)=>new Promise(res=>setState({message:msg,resolve:res}));
+  const Modal=state?<ConfirmModal message={state.message}
+    onConfirm={()=>{setState(null);state.resolve(true);}}
+    onCancel= {()=>{setState(null);state.resolve(false);}}/>:null;
+  return [confirm,Modal];
+}
+
+function Toast({toasts}){
+  return <div style={{position:"fixed",top:16,right:16,zIndex:9999,display:"flex",flexDirection:"column",gap:8,pointerEvents:"none"}}>
+    {toasts.map(n=><div key={n.toastId} style={{background:"#161616",border:"1px solid #32D74B50",
+      borderLeft:"3px solid #32D74B",borderRadius:12,padding:"12px 16px",width:290,color:"#F2F2F7",
+      boxShadow:"0 16px 48px rgba(0,0,0,.7)",display:"flex",alignItems:"flex-start",gap:10,animation:"slideIn .3s ease"}}>
+      <span style={{fontSize:18,flexShrink:0}}>✅</span>
+      <div>
+        <div style={{fontWeight:700,fontSize:11,color:"#32D74B",marginBottom:2}}>DONE</div>
+        <div style={{fontSize:12,color:"#AEAEB2"}}><b style={{color:"#F2F2F7"}}>{n.assignee}</b> — <i>{n.title}</i></div>
+      </div>
+    </div>)}
+  </div>;
+}
+
+function UndoBar({history,onUndo}){
+  if(!history.length) return null;
+  const last=history[history.length-1];
+  return <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:500,
+    background:"#1C1C1E",border:"1px solid #3A3A3C",borderRadius:14,padding:"10px 18px",
+    display:"flex",alignItems:"center",gap:14,boxShadow:"0 8px 32px rgba(0,0,0,.7)",minWidth:260}}>
+    <span style={{fontSize:13,color:"#AEAEB2",flex:1}}>
+      <span style={{color:"#636366",fontSize:10}}>{history.length} · </span>{last.label}
+    </span>
+    <button onClick={onUndo} style={{background:"#5E5CE6",border:"none",borderRadius:8,
+      color:"#fff",fontWeight:700,fontSize:11,padding:"6px 14px",cursor:"pointer"}}>↩ Undo</button>
+  </div>;
+}
+
+function ErrorBanner({msg,onClose}){
+  if(!msg) return null;
+  return <div style={{position:"fixed",bottom:80,left:"50%",transform:"translateX(-50%)",zIndex:600,
+    background:"#2C1010",border:"1px solid #FF453A50",borderRadius:12,padding:"10px 18px",
+    display:"flex",alignItems:"center",gap:12,maxWidth:400}}>
+    <span style={{fontSize:14}}>⚠️</span>
+    <span style={{fontSize:12,color:"#FF6B6B",flex:1}}>{msg}</span>
+    <button onClick={onClose} style={{background:"none",border:"none",color:"#FF453A",cursor:"pointer",fontSize:16}}>✕</button>
+  </div>;
+}
+
+/* ═══════════════════════════════════════
+   TV VIEW
+═══════════════════════════════════════ */
+function TVView({tasks,members,onSwitch}){
+  const [clock,setClock]=useState(new Date());
+  const [tvMode,setTvMode]=useState("all");
+  useEffect(()=>{const i=setInterval(()=>setClock(new Date()),1000);return()=>clearInterval(i);},[]);
+  const sorted=sortTasks(tasks),pending=sorted.filter(t=>!t.done),done=sorted.filter(t=>t.done);
+  const pct=tasks.length?Math.round(done.length/tasks.length*100):0;
+  const dailyN=pending.filter(t=>t.category==="Daily").length;
+
+  return <div style={{width:"100%",height:"100vh",background:"#080808",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    <div style={{background:"#0D0D0D",borderBottom:"1px solid #1C1C1C",display:"flex",alignItems:"center",
+      padding:"0 40px",gap:20,height:68,flexShrink:0}}>
+      <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <div style={{width:42,height:42,borderRadius:11,background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",
+          display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>⚡</div>
+        <div>
+          <div style={{fontWeight:800,fontSize:20,color:"#F2F2F7",letterSpacing:"-.03em",lineHeight:1}}>Team Board</div>
+          <div style={{fontSize:9,color:"#3A3A3C",letterSpacing:".1em"}}>LIVE · {clock.toLocaleDateString("fr-FR",{weekday:"long",day:"2-digit",month:"long"})}</div>
+        </div>
+      </div>
+      <div style={{display:"flex",background:"#141414",border:"1px solid #2C2C2E",borderRadius:10,padding:3,gap:2,marginLeft:8}}>
+        {[{id:"all",label:"📋 ALL"},{id:"daily",label:"🔥 DAILY"}].map(m=>(
+          <button key={m.id} onClick={()=>setTvMode(m.id)} style={{padding:"6px 18px",borderRadius:8,border:"none",
+            cursor:"pointer",fontWeight:800,fontSize:11,letterSpacing:".06em",transition:"all .2s",
+            background:tvMode===m.id?(m.id==="daily"?"linear-gradient(135deg,#FF453A,#FF9F0A)":"linear-gradient(135deg,#5E5CE6,#BF5AF2)"):"transparent",
+            color:tvMode===m.id?"#fff":"#636366",boxShadow:tvMode===m.id?"0 2px 12px rgba(0,0,0,.4)":"none"}}>
+            {m.label}
+          </button>
+        ))}
+      </div>
+      <div style={{flex:1}}/>
+      <div style={{display:"flex",gap:10}}>
+        {[{l:"IN PROGRESS",v:pending.length,c:"#F2F2F7"},{l:"DONE",v:done.length,c:"#32D74B"},
+          ...(dailyN>0?[{l:"DAILY 🔥",v:dailyN,c:"#FF453A"}]:[]),{l:"PROGRESS",v:`${pct}%`,c:"#5E5CE6"}]
+          .map(k=><div key={k.l} style={{background:"#141414",border:`1px solid ${k.c}18`,borderRadius:10,
+            padding:"8px 18px",textAlign:"center",minWidth:80}}>
+            <div style={{fontWeight:800,fontSize:24,color:k.c,lineHeight:1}}>{k.v}</div>
+            <div style={{fontSize:8,color:"#3A3A3C",letterSpacing:".08em",marginTop:2}}>{k.l}</div>
+          </div>)}
+      </div>
+      <div style={{textAlign:"right",paddingLeft:8}}>
+        <div style={{fontFamily:"monospace",fontSize:34,color:"#F2F2F7",fontWeight:700,lineHeight:1}}>
+          {clock.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</div>
+        <div style={{fontSize:9,color:"#3A3A3C",marginTop:2}}>{clock.getSeconds()}s</div>
+      </div>
+      <button onClick={onSwitch} style={{background:"#141414",border:"1px solid #2C2C2E",borderRadius:9,
+        color:"#636366",fontSize:10,fontWeight:700,padding:"8px 14px",cursor:"pointer",marginLeft:8}}>⚙ MANAGE</button>
+    </div>
+    {tvMode==="all"
+      ?<TVAllMode tasks={tasks} pending={pending} done={done} members={members}/>
+      :<TVDailyMode tasks={tasks} members={members}/>}
+  </div>;
+}
+
+function TVAllMode({tasks,pending,done,members}){
+  const mStats=members.map(m=>({name:m,total:tasks.filter(t=>t.assignee===m).length,done:tasks.filter(t=>t.assignee===m&&t.done).length}));
+  return <div style={{flex:1,display:"grid",gridTemplateColumns:"1fr 1fr 1fr 240px",overflow:"hidden"}}>
+    <div style={{overflowY:"auto",padding:"20px 16px 20px 24px",borderRight:"1px solid #141414",display:"flex",flexDirection:"column",gap:14}}>
+      {["Daily","Weekly"].map(cat=>{const g=pending.filter(t=>t.category===cat);if(!g.length)return null;
+        return <TVGroup key={cat} cat={cat} tasks={g} members={members}/>;
+      })}
+    </div>
+    <div style={{overflowY:"auto",padding:"20px 16px",borderRight:"1px solid #141414",display:"flex",flexDirection:"column",gap:14}}>
+      {["Monthly","Backlog"].map(cat=>{const g=pending.filter(t=>t.category===cat);if(!g.length)return null;
+        return <TVGroup key={cat} cat={cat} tasks={g} members={members}/>;
+      })}
+    </div>
+    <div style={{overflowY:"auto",padding:"20px 16px",borderRight:"1px solid #141414",display:"flex",flexDirection:"column",gap:6}}>
+      {done.length>0&&<>
+        <div style={{display:"inline-flex",alignItems:"center",gap:7,marginBottom:4,background:"rgba(50,215,75,.08)",
+          border:"1px solid rgba(50,215,75,.2)",borderRadius:9,padding:"5px 14px",width:"fit-content"}}>
+          <span>✅</span><span style={{fontWeight:800,fontSize:11,color:"#32D74B"}}>DONE</span>
+          <span style={{fontFamily:"monospace",fontSize:9,color:"#32D74B60"}}>({done.length})</span>
+        </div>
+        {done.map(t=><TVRow key={t.id} task={t} members={members}/>)}
+      </>}
+      {!done.length&&<div style={{color:"#2C2C2E",fontSize:13,fontWeight:700,textAlign:"center",marginTop:40}}>No tasks done yet</div>}
+    </div>
+    <div style={{background:"#0A0A0A",overflowY:"auto",padding:"20px 14px"}}>
+      <div style={{fontWeight:800,fontSize:9,color:"#2C2C2E",letterSpacing:".12em",marginBottom:12}}>TEAM</div>
+      <div style={{display:"flex",flexDirection:"column",gap:11}}>
+        {mStats.map(m=>{const p2=m.total?Math.round(m.done/m.total*100):0,c=mColor(m.name,members);
+          return <div key={m.name}>
+            <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4}}>
+              <Avatar name={m.name} members={members} size={26}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:11,color:"#E5E5EA",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.name}</div>
+                <div style={{fontFamily:"monospace",fontSize:8,color:"#48484A"}}>{m.done}/{m.total}</div>
+              </div>
+              <span style={{fontWeight:800,fontSize:11,color:p2===100?"#32D74B":c}}>{p2}%</span>
+            </div>
+            <div style={{height:2,background:"#1C1C1E",borderRadius:2,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${p2}%`,background:p2===100?"#32D74B":c,borderRadius:2}}/>
+            </div>
+          </div>;
+        })}
+      </div>
+      {done.length>0&&<>
+        <div style={{fontWeight:800,fontSize:9,color:"#2C2C2E",letterSpacing:".12em",marginTop:20,marginBottom:8}}>RECENTLY DONE</div>
+        {[...done].sort((a,b)=>new Date(b.done_at)-new Date(a.done_at)).slice(0,5).map(t=>
+          <div key={t.id} style={{background:"#111",border:"1px solid #1A1A1A",borderRadius:7,padding:"6px 8px",marginBottom:4}}>
+            <div style={{fontSize:9,color:"#636366",marginBottom:2}}>{t.title}</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div style={{display:"flex",alignItems:"center",gap:3}}>
+                <Avatar name={t.assignee} members={members} size={12} ring={false}/>
+                <span style={{fontSize:8,color:"#8E8E93"}}>{t.assignee}</span>
+              </div>
+              {t.done_at&&<span style={{fontFamily:"monospace",fontSize:8,color:"#32D74B"}}>{fmtTime(t.done_at)}</span>}
+            </div>
+          </div>
+        )}
+      </>}
+    </div>
+  </div>;
+}
+
+function TVDailyMode({tasks,members}){
+  const withDaily=members.filter(m=>tasks.some(t=>t.assignee===m&&t.category==="Daily"));
+  const cols=Math.min(4,Math.max(2,Math.ceil(Math.sqrt(withDaily.length||1))));
+  return <div style={{flex:1,overflowY:"auto",padding:"24px 32px"}}>
+    <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:16}}>
+      {members.map(m=>{
+        const all=tasks.filter(t=>t.assignee===m&&t.category==="Daily");
+        if(!all.length) return null;
+        const pend=all.filter(t=>!t.done),dn=all.filter(t=>t.done);
+        const pct=Math.round(dn.length/all.length*100),c=mColor(m,members),allDone=pct===100;
+        return <div key={m} style={{background:allDone?"rgba(50,215,75,.06)":"#0F0F0F",
+          border:`1px solid ${allDone?"rgba(50,215,75,.3)":c+"30"}`,
+          borderTop:`3px solid ${allDone?"#32D74B":c}`,borderRadius:14,padding:"16px 16px 14px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+            <div style={{width:44,height:44,borderRadius:"50%",background:c,flexShrink:0,
+              display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:18,
+              boxShadow:`0 0 0 2px #0D0D0D,0 0 0 4px ${c}50`}}>{m[0].toUpperCase()}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:800,fontSize:16,color:"#F2F2F7",lineHeight:1,marginBottom:3,
+                whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m}</div>
+              <div style={{fontSize:11,color:"#636366"}}>{dn.length}/{all.length} done</div>
+            </div>
+            <div style={{fontWeight:800,fontSize:20,color:allDone?"#32D74B":pct>50?"#FF9F0A":c}}>{pct}%</div>
+          </div>
+          <div style={{height:3,background:"#1C1C1E",borderRadius:3,overflow:"hidden",marginBottom:8}}>
+            <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            {pend.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:8,
+              background:"#1A1A1A",border:"1px solid #2C2C2E",borderRadius:8,padding:"7px 10px"}}>
+              <div style={{width:10,height:10,borderRadius:"50%",flexShrink:0,border:"2px solid #FF453A"}}/>
+              <span style={{fontSize:12,color:"#E5E5EA",fontWeight:500,flex:1}}>{t.title}</span>
+            </div>)}
+            {dn.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:8,
+              background:"#111",border:"1px solid #1A1A1A",borderRadius:8,padding:"7px 10px",opacity:.5}}>
+              <div style={{width:10,height:10,borderRadius:"50%",flexShrink:0,background:"#32D74B",
+                display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <span style={{color:"#000",fontSize:7,fontWeight:900}}>✓</span>
+              </div>
+              <span style={{fontSize:12,color:"#636366",textDecoration:"line-through",flex:1}}>{t.title}</span>
+              {t.done_at&&<span style={{fontFamily:"monospace",fontSize:9,color:"#32D74B",flexShrink:0}}>{fmtTime(t.done_at)}</span>}
+            </div>)}
+          </div>
+          {allDone&&<div style={{background:"rgba(50,215,75,.1)",border:"1px solid rgba(50,215,75,.3)",
+            borderRadius:8,padding:"6px",textAlign:"center",fontSize:12,color:"#32D74B",fontWeight:700,marginTop:8}}>✅ All done!</div>}
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
+function TVGroup({cat,tasks,members}){
+  return <div>
+    <div style={{display:"inline-flex",alignItems:"center",gap:7,marginBottom:8,background:CAT[cat].bg,
+      border:`1px solid ${CAT[cat].color}30`,borderRadius:9,padding:"5px 14px"}}>
+      <span style={{fontSize:14}}>{CAT[cat].icon}</span>
+      <span style={{fontWeight:800,fontSize:11,color:CAT[cat].color,letterSpacing:".08em"}}>{cat.toUpperCase()}</span>
+      <span style={{fontFamily:"monospace",fontSize:9,color:CAT[cat].color+"80"}}>({tasks.length})</span>
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+      {tasks.map(t=><TVRow key={t.id} task={t} members={members}/>)}
+    </div>
+  </div>;
+}
+
+function TVRow({task,members}){
+  const cfg=CAT[task.category];
+  return <div style={{background:task.done?"#0E0E0E":"#131313",border:`1px solid ${task.done?"#1A1A1A":cfg.color+"25"}`,
+    borderLeft:`3px solid ${task.done?"#32D74B":cfg.color}`,borderRadius:8,padding:"8px 11px",
+    display:"flex",alignItems:"center",gap:10,opacity:task.done?.5:1}}>
+    <div style={{width:14,height:14,borderRadius:"50%",flexShrink:0,border:`2px solid ${task.done?"#32D74B":cfg.color}`,
+      background:task.done?"#32D74B15":"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      {task.done&&<span style={{color:"#32D74B",fontSize:7,fontWeight:800}}>✓</span>}
+    </div>
+    <div style={{flex:1,fontWeight:600,fontSize:12,color:task.done?"#3A3A3C":"#E5E5EA",
+      textDecoration:task.done?"line-through":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{task.title}</div>
+    <div style={{display:"flex",alignItems:"center",gap:7,flexShrink:0}}>
+      <Avatar name={task.assignee} members={members} size={18}/>
+      <span style={{fontSize:10,color:"#636366",minWidth:50}}>{task.assignee}</span>
+      {task.done&&task.done_at
+        ?<span style={{fontFamily:"monospace",fontSize:8,color:"#32D74B",minWidth:70}}>{fmtTime(task.done_at)}</span>
+        :<Badge category={task.category} due_date={task.due_date}/>}
+    </div>
+  </div>;
+}
+
+/* ═══════════════════════════════════════
+   ADMIN
+═══════════════════════════════════════ */
+function AdminLoginModal({onLogin,onClose,pwdHash}){
+  const [pwd,setPwd]=useState(""), [err,setErr]=useState(false), [busy,setBusy]=useState(false);
+  const attempt=async()=>{setBusy(true);const h=await sha256(pwd);if(h===pwdHash){onLogin();}else{setErr(true);setBusy(false);}};
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:300,
+    display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}>
+    <div style={{background:"#141414",border:"1px solid #2C2C2E",borderRadius:20,padding:"32px 28px",
+      width:320,display:"flex",flexDirection:"column",gap:16}} onClick={e=>e.stopPropagation()}>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontSize:32,marginBottom:8}}>🔐</div>
+        <div style={{fontWeight:800,fontSize:16,color:"#F2F2F7",marginBottom:4}}>Admin Access</div>
+        <div style={{fontSize:11,color:"#636366"}}>{ADMIN_EMAIL}</div>
+      </div>
+      <input type="password" value={pwd} onChange={e=>{setPwd(e.target.value);setErr(false);}}
+        onKeyDown={e=>e.key==="Enter"&&attempt()} placeholder="Password" autoFocus
+        style={{background:"#1C1C1E",border:`1px solid ${err?"#FF453A":"#2C2C2E"}`,borderRadius:9,
+          color:"#F2F2F7",fontSize:14,padding:"11px 14px",width:"100%",outline:"none"}}/>
+      {err&&<div style={{fontSize:11,color:"#FF453A"}}>⚠ Wrong password</div>}
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={onClose} style={{flex:1,padding:"11px",borderRadius:10,border:"1px solid #2C2C2E",
+          background:"transparent",color:"#8E8E93",fontWeight:700,fontSize:12,cursor:"pointer"}}>CANCEL</button>
+        <button onClick={attempt} disabled={busy||!pwd} style={{flex:2,padding:"11px",borderRadius:10,border:"none",
+          background:pwd?"linear-gradient(135deg,#5E5CE6,#BF5AF2)":"#1C1C1E",
+          color:pwd?"#fff":"#3A3A3C",fontWeight:700,fontSize:12,cursor:pwd?"pointer":"not-allowed"}}>
+          {busy?"Checking…":"ENTER"}</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function AdminPanel({members,setMembers,tasks,setTasks,pwdHash,setPwdHash,onClose,setError}){
+  const [newMember,setNewMember]=useState("");
+  const [tab,setTab]=useState("members");
+  const [oldPwd,setOldPwd]=useState(""), [newPwd,setNewPwd]=useState(""), [confPwd,setConfPwd]=useState("");
+  const [pwdMsg,setPwdMsg]=useState(null);
+  const [confirm,ConfirmModalEl]=useConfirm();
+  const inp={background:"#1C1C1E",border:"1px solid #2C2C2E",borderRadius:9,color:"#F2F2F7",fontSize:13,padding:"10px 12px",width:"100%",outline:"none"};
+
+  const addMember=async()=>{
+    const n=newMember.trim(); if(!n||members.includes(n)) return;
+    try {
+      await api.addMember(n);
+      setMembers(p=>[...p,n]); setNewMember("");
+    } catch(e){ setError("Failed to add member: "+e.message); }
+  };
+
+  const removeMember=async name=>{
+    const hasPending=tasks.some(t=>t.assignee===name&&!t.done);
+    const msg=hasPending?`${name} has tasks in progress. Remove member AND all tasks?`:`Remove member "${name}"?`;
+    const ok=await confirm(msg); if(!ok) return;
+    try {
+      await api.deleteMember(name);
+      setMembers(p=>p.filter(m=>m!==name));
+      setTasks(p=>p.filter(t=>t.assignee!==name));
+    } catch(e){ setError("Failed to remove member: "+e.message); }
+  };
+
+  const changePwd=async()=>{
+    const h=await sha256(oldPwd); if(h!==pwdHash){setPwdMsg({ok:false,text:"Current password is wrong"});return;}
+    if(newPwd.length<6){setPwdMsg({ok:false,text:"6+ characters required"});return;}
+    if(newPwd!==confPwd){setPwdMsg({ok:false,text:"Passwords don't match"});return;}
+    setPwdHash(await sha256(newPwd)); setOldPwd(""); setNewPwd(""); setConfPwd("");
+    setPwdMsg({ok:true,text:"Password updated ✓"});
+  };
+
+  return <>{ConfirmModalEl}
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:290,
+      display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={onClose}>
+      <div style={{background:"#0F0F0F",border:"1px solid #2C2C2E",borderRadius:"20px 20px 0 0",
+        padding:"0 0 40px",width:"100%",maxWidth:560,maxHeight:"85vh",display:"flex",flexDirection:"column"}}
+        onClick={e=>e.stopPropagation()}>
+        <div style={{padding:"18px 20px 0",display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg,#FF9F0A,#FF453A)",
+            display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🔐</div>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:800,fontSize:15,color:"#F2F2F7"}}>Admin Panel</div>
+            <div style={{fontSize:10,color:"#636366"}}>{ADMIN_EMAIL}</div>
+          </div>
+          <button onClick={onClose} style={{background:"#1C1C1E",border:"1px solid #2C2C2E",borderRadius:8,
+            color:"#8E8E93",fontSize:11,fontWeight:700,padding:"7px 14px",cursor:"pointer"}}>✕ CLOSE</button>
+        </div>
+        <div style={{display:"flex",borderBottom:"1px solid #1C1C1E",margin:"14px 0 0"}}>
+          {["members","security"].map(k=><button key={k} onClick={()=>setTab(k)} style={{flex:1,padding:"10px 0",
+            border:"none",cursor:"pointer",background:"transparent",fontWeight:800,fontSize:10,
+            color:tab===k?"#F2F2F7":"#3A3A3C",borderBottom:`2px solid ${tab===k?"#FF9F0A":"transparent"}`,transition:"all .2s"}}>
+            {k==="members"?"👥 MEMBERS":"🔑 PASSWORD"}
+          </button>)}
+        </div>
+        <div style={{overflowY:"auto",padding:"16px 20px",flex:1}}>
+          {tab==="members"&&<>
+            <div style={{display:"flex",gap:8,marginBottom:16}}>
+              <input value={newMember} onChange={e=>setNewMember(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&addMember()} placeholder="New member…" style={{...inp,flex:1}}/>
+              <button onClick={addMember} style={{background:"#5E5CE6",border:"none",borderRadius:9,
+                color:"#fff",fontWeight:700,fontSize:11,padding:"0 18px",cursor:"pointer",flexShrink:0}}>+ ADD</button>
+            </div>
+            {members.map(m=>{const mt=tasks.filter(t=>t.assignee===m),md=mt.filter(t=>t.done);
+              return <div key={m} style={{background:"#161616",border:"1px solid #1C1C1E",borderRadius:12,
+                padding:"12px 14px",display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                <Avatar name={m} members={members} size={36}/>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:13,color:"#F2F2F7"}}>{m}</div>
+                  <div style={{fontSize:10,color:"#636366"}}>{md.length} done · {mt.filter(t=>!t.done).length} in progress</div>
+                </div>
+                <button onClick={()=>removeMember(m)} style={{background:"rgba(255,69,58,.12)",
+                  border:"1px solid rgba(255,69,58,.3)",borderRadius:8,color:"#FF453A",
+                  fontSize:10,fontWeight:700,padding:"5px 12px",cursor:"pointer"}}>REMOVE</button>
+              </div>;
+            })}
+          </>}
+          {tab==="security"&&<div style={{display:"flex",flexDirection:"column",gap:12,maxWidth:380}}>
+            {[{l:"CURRENT PASSWORD",v:oldPwd,s:setOldPwd},{l:"NEW PASSWORD",v:newPwd,s:setNewPwd},{l:"CONFIRM",v:confPwd,s:setConfPwd}].map(f=>
+              <div key={f.l}>
+                <div style={{fontSize:10,color:"#636366",letterSpacing:".06em",fontWeight:700,marginBottom:5}}>{f.l}</div>
+                <input type="password" value={f.v} onChange={e=>{f.s(e.target.value);setPwdMsg(null);}} style={inp}/>
+              </div>
+            )}
+            {pwdMsg&&<div style={{fontSize:11,color:pwdMsg.ok?"#32D74B":"#FF453A",padding:"8px 12px",
+              background:pwdMsg.ok?"rgba(50,215,75,.08)":"rgba(255,69,58,.08)",borderRadius:8}}>{pwdMsg.text}</div>}
+            <button onClick={changePwd} style={{background:"linear-gradient(135deg,#FF9F0A,#FF453A)",border:"none",
+              borderRadius:10,color:"#fff",fontWeight:700,fontSize:12,padding:"12px",cursor:"pointer"}}>UPDATE PASSWORD</button>
+          </div>}
+        </div>
+      </div>
+    </div>
+  </>;
+}
+
+/* ═══════════════════════════════════════
+   MANAGER VIEW
+═══════════════════════════════════════ */
+const selS={background:"#111",border:"1px solid #2C2C2E",borderRadius:8,color:"#AEAEB2",fontSize:12,padding:"8px 10px",cursor:"pointer",flexShrink:0};
+const inpBase={background:"#1C1C1E",border:"1px solid #2C2C2E",borderRadius:9,color:"#F2F2F7",fontSize:13,padding:"10px 12px",width:"100%",outline:"none"};
+
+function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setError,onSwitch}){
+  const [tab,setTab]=useState("tasks");
+  const [mode,setMode]=useState("all");
+  const [showForm,setShowForm]=useState(false), [editTask,setEditTask]=useState(null);
+  const [fMember,setFMember]=useState("All"), [fCat,setFCat]=useState("All"), [fStatus,setFStatus]=useState("All");
+  const [showLogin,setShowLogin]=useState(false), [showAdmin,setShowAdmin]=useState(false), [isAdmin,setIsAdmin]=useState(false);
+  const [confirm,ConfirmModalEl]=useConfirm();
+  const [newHL,setNewHL]=useState(null);
+
+  const filtered=sortTasks(tasks).filter(t=>
+    (fMember==="All"||t.assignee===fMember)&&(fCat==="All"||t.category===fCat)&&
+    (fStatus==="All"||(fStatus==="In Progress"&&!t.done)||(fStatus==="Done"&&t.done)));
+
+  const toggleDone=useCallback(async task=>{
+    const newDone=!task.done;
+    const updated={...task,done:newDone,done_at:newDone?new Date().toISOString():null};
+    setTasks(p=>p.map(t=>t.id===task.id?updated:t));
+    try { await api.updateTask(updated); }
+    catch(e){ setTasks(p=>p.map(t=>t.id===task.id?task:t)); setError("Failed to update task"); }
+  },[tasks,setTasks,setError]);
+
+  const deleteTask=useCallback(async id=>{
+    const t=tasks.find(x=>x.id===id);
+    const ok=await confirm(`Delete "${t?.title}"?`); if(!ok) return;
+    setTasks(p=>p.filter(t=>t.id!==id));
+    try { await api.deleteTask(id); }
+    catch(e){ setTasks(p=>[...p,t]); setError("Failed to delete task"); }
+  },[tasks,confirm,setTasks,setError]);
+
+  const saveTask=useCallback(async form=>{
+    const escalated=escalate(form);
+    if(form.id){
+      setTasks(p=>p.map(t=>t.id===form.id?{...t,...escalated}:t));
+      try { await api.updateTask(escalated); }
+      catch(e){ setError("Failed to update task"); }
+    } else {
+      try {
+        const created=await api.addTask(escalated);
+        setTasks(p=>[...p,created]);
+        setNewHL(created.id); setTimeout(()=>setNewHL(null),2000);
+      } catch(e){ setError("Failed to add task: "+e.message); }
+    }
+    setShowForm(false); setEditTask(null);
+  },[tasks,setTasks,setError]);
+
+  return <div style={{minHeight:"100vh",background:"#080808",maxWidth:640,margin:"0 auto",paddingBottom:100}}>
+    {ConfirmModalEl}
+    <div style={{background:"#0D0D0D",borderBottom:"1px solid #1A1A1A",padding:"10px 14px",
+      display:"flex",alignItems:"center",gap:8,position:"sticky",top:0,zIndex:60}}>
+      <div style={{width:30,height:30,borderRadius:8,background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",
+        display:"flex",alignItems:"center",justifyContent:"center",fontSize:15}}>⚡</div>
+      <div style={{flex:1}}>
+        <div style={{fontWeight:800,fontSize:14,color:"#F2F2F7",lineHeight:1}}>Team Board</div>
+        <div style={{fontSize:8,color:"#48484A"}}>COLLABORATIVE</div>
+      </div>
+      <div style={{display:"flex",background:"#141414",border:"1px solid #2C2C2E",borderRadius:9,padding:2,gap:1}}>
+        {[{id:"all",label:"📋 ALL"},{id:"daily",label:"🔥 DAILY"}].map(m=>(
+          <button key={m.id} onClick={()=>{setMode(m.id);setTab("tasks");}} style={{
+            padding:"5px 11px",borderRadius:7,border:"none",cursor:"pointer",fontWeight:800,fontSize:9,transition:"all .2s",
+            background:mode===m.id?(m.id==="daily"?"linear-gradient(135deg,#FF453A,#FF9F0A)":"linear-gradient(135deg,#5E5CE6,#BF5AF2)"):"transparent",
+            color:mode===m.id?"#fff":"#636366"}}>{m.label}</button>
+        ))}
+      </div>
+      <button onClick={()=>isAdmin?setShowAdmin(true):setShowLogin(true)}
+        style={{background:isAdmin?"rgba(255,159,10,.12)":"#141414",border:`1px solid ${isAdmin?"#FF9F0A50":"#2C2C2E"}`,
+          borderRadius:8,color:isAdmin?"#FF9F0A":"#8E8E93",fontSize:9,fontWeight:700,padding:"6px 9px",cursor:"pointer"}}>
+        {isAdmin?"🔐":"🔒"}
+      </button>
+      <button onClick={onSwitch} style={{background:"#141414",border:"1px solid #2C2C2E",borderRadius:8,
+        color:"#8E8E93",fontSize:9,fontWeight:700,padding:"6px 9px",cursor:"pointer"}}>📺</button>
+    </div>
+
+    <div style={{display:"flex",background:"#0A0A0A",borderBottom:"1px solid #141414"}}>
+      {["tasks","team"].map(k=><button key={k} onClick={()=>setTab(k)} style={{flex:1,padding:"10px 0",border:"none",
+        cursor:"pointer",background:"transparent",fontWeight:800,fontSize:10,
+        color:tab===k?"#F2F2F7":"#3A3A3C",borderBottom:`2px solid ${tab===k?"#5E5CE6":"transparent"}`,transition:"all .2s"}}>
+        {k==="tasks"?"TASKS":"TEAM"}
+      </button>)}
+    </div>
+
+    {mode==="daily"&&tab==="tasks"&&<div style={{padding:"14px"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
+        {members.map(m=>{
+          const all=tasks.filter(t=>t.assignee===m&&t.category==="Daily");
+          if(!all.length) return null;
+          const pend=all.filter(t=>!t.done),dn=all.filter(t=>t.done);
+          const pct=Math.round(dn.length/all.length*100),c=mColor(m,members),allDone=pct===100;
+          return <div key={m} style={{background:allDone?"rgba(50,215,75,.06)":"#111",
+            border:`1px solid ${allDone?"rgba(50,215,75,.3)":c+"30"}`,
+            borderTop:`3px solid ${allDone?"#32D74B":c}`,borderRadius:14,padding:"13px 13px 11px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:7}}>
+              <div style={{width:38,height:38,borderRadius:"50%",background:c,flexShrink:0,
+                display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:16,
+                boxShadow:`0 0 0 2px #0D0D0D,0 0 0 3.5px ${c}50`}}>{m[0].toUpperCase()}</div>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:800,fontSize:13,color:"#F2F2F7",lineHeight:1,marginBottom:2}}>{m}</div>
+                <div style={{fontSize:10,color:"#636366"}}>{dn.length}/{all.length} done</div>
+              </div>
+              <div style={{fontWeight:800,fontSize:16,color:allDone?"#32D74B":pct>50?"#FF9F0A":c}}>{pct}%</div>
+            </div>
+            <div style={{height:3,background:"#1C1C1E",borderRadius:3,overflow:"hidden",marginBottom:7}}>
+              <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              {pend.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:7,
+                background:"#1A1A1A",border:"1px solid #2C2C2E",borderRadius:7,padding:"6px 9px"}}>
+                <div style={{width:9,height:9,borderRadius:"50%",flexShrink:0,border:"2px solid #FF453A"}}/>
+                <span style={{fontSize:11,color:"#E5E5EA",flex:1}}>{t.title}</span>
+                <button onClick={()=>toggleDone(t)} style={{background:"#2C2C2E",border:"none",borderRadius:6,
+                  color:"#8E8E93",fontSize:9,fontWeight:700,padding:"3px 8px",cursor:"pointer",flexShrink:0}}>✓</button>
+              </div>)}
+              {dn.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:7,
+                background:"#111",border:"1px solid #1A1A1A",borderRadius:7,padding:"6px 9px",opacity:.5}}>
+                <div style={{width:9,height:9,borderRadius:"50%",flexShrink:0,background:"#32D74B"}}/>
+                <span style={{fontSize:11,color:"#636366",textDecoration:"line-through",flex:1}}>{t.title}</span>
+                {t.done_at&&<span style={{fontFamily:"monospace",fontSize:8,color:"#32D74B"}}>{fmtTime(t.done_at)}</span>}
+              </div>)}
+            </div>
+            {allDone&&<div style={{background:"rgba(50,215,75,.1)",border:"1px solid rgba(50,215,75,.3)",
+              borderRadius:7,padding:"5px",textAlign:"center",fontSize:11,color:"#32D74B",fontWeight:700,marginTop:7}}>✅ All done!</div>}
+          </div>;
+        })}
+      </div>
+    </div>}
+
+    {mode==="all"&&tab==="tasks"&&<div style={{padding:"14px"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:12}}>
+        {CATEGORIES.map(cat=>{const n=tasks.filter(t=>!t.done&&t.category===cat).length;
+          return <div key={cat} style={{background:"#111",border:`1px solid ${CAT[cat].color}20`,borderRadius:10,
+            padding:"9px 6px",textAlign:"center",cursor:"pointer"}} onClick={()=>{setFCat(cat);setFStatus("In Progress");}}>
+            <div style={{fontSize:15,marginBottom:2}}>{CAT[cat].icon}</div>
+            <div style={{fontWeight:800,fontSize:18,color:CAT[cat].color,lineHeight:1}}>{n}</div>
+            <div style={{fontSize:8,color:"#48484A",marginTop:1}}>{cat.toUpperCase()}</div>
+          </div>;
+        })}
+      </div>
+      <div style={{display:"flex",gap:7,marginBottom:12,alignItems:"center",flexWrap:"wrap"}}>
+        <select value={fMember} onChange={e=>setFMember(e.target.value)} style={selS}>
+          <option>All</option>{members.map(m=><option key={m}>{m}</option>)}
+        </select>
+        <select value={fCat} onChange={e=>setFCat(e.target.value)} style={selS}>
+          <option>All</option>{CATEGORIES.map(c=><option key={c}>{c}</option>)}
+        </select>
+        <select value={fStatus} onChange={e=>setFStatus(e.target.value)} style={selS}>
+          <option>All</option><option>In Progress</option><option>Done</option>
+        </select>
+        {(fMember!=="All"||fCat!=="All"||fStatus!=="All")&&
+          <button onClick={()=>{setFMember("All");setFCat("All");setFStatus("All");}} style={{background:"#2C2C2E",
+            border:"none",borderRadius:8,color:"#8E8E93",fontSize:10,fontWeight:700,padding:"7px 10px",cursor:"pointer"}}>✕ Clear</button>}
+        <div style={{flex:1}}/>
+        <button onClick={()=>{setEditTask(null);setShowForm(true);}} style={{background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",
+          border:"none",borderRadius:9,color:"#fff",fontWeight:700,fontSize:11,padding:"9px 14px",cursor:"pointer",
+          boxShadow:"0 4px 18px rgba(94,92,230,.4)"}}>+ ADD</button>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:7}}>
+        {filtered.length===0&&<div style={{textAlign:"center",padding:"48px 0",color:"#2C2C2E",fontSize:13,fontWeight:700}}>No tasks</div>}
+        {filtered.map(task=><ManagerCard key={task.id} task={task} members={members}
+          onToggle={toggleDone} onEdit={t=>{setEditTask(t);setShowForm(true);}}
+          onDelete={deleteTask} highlight={task.id===newHL}/>)}
+      </div>
+    </div>}
+
+    {tab==="team"&&<div style={{padding:"14px"}}>
+      {!isAdmin&&<div style={{background:"rgba(255,159,10,.08)",border:"1px solid rgba(255,159,10,.25)",
+        borderRadius:10,padding:"11px 14px",marginBottom:14,fontSize:12,color:"#FF9F0A",display:"flex",gap:8}}>
+        🔒 <span>Member management requires <button onClick={()=>setShowLogin(true)}
+          style={{background:"none",border:"none",color:"#FF9F0A",fontWeight:700,cursor:"pointer",textDecoration:"underline",padding:0}}>admin access</button></span>
+      </div>}
+      {members.map(m=>{
+        const mt=tasks.filter(t=>t.assignee===m),md=mt.filter(t=>t.done);
+        const p2=mt.length?Math.round(md.length/mt.length*100):0,c=mColor(m,members);
+        const open=mt.filter(t=>!t.done),overdue=open.filter(t=>t.due_date&&new Date(t.due_date)<today());
+        return <div key={m} style={{background:"#111",border:`1px solid ${overdue.length?"#FF453A30":"#1C1C1E"}`,
+          borderRadius:12,padding:"13px 14px",marginBottom:9}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+            <Avatar name={m} members={members} size={38}/>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:700,fontSize:14,color:"#F2F2F7",lineHeight:1,marginBottom:3}}>{m}</div>
+              <div style={{fontSize:11,color:"#636366",display:"flex",gap:8}}>
+                {md.length}/{mt.length} done
+                {overdue.length>0&&<span style={{color:"#FF453A",fontWeight:700,fontSize:10}}>⚠ {overdue.length} overdue</span>}
+              </div>
+            </div>
+            <div style={{fontWeight:800,fontSize:18,color:p2===100?"#32D74B":c}}>{p2}%</div>
+          </div>
+          <div style={{height:3,background:"#1C1C1E",borderRadius:3,overflow:"hidden",marginBottom:open.length?8:0}}>
+            <div style={{height:"100%",width:`${p2}%`,background:p2===100?"#32D74B":c,borderRadius:3}}/>
+          </div>
+          {open.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+            {open.map(t=><span key={t.id} style={{fontSize:10,background:CAT[t.category].bg,color:CAT[t.category].color,
+              border:`1px solid ${CAT[t.category].color}30`,padding:"3px 9px",borderRadius:20}}>
+              {CAT[t.category].icon} {t.title}
+              {t.due_date&&<span style={{opacity:.6}}> · {fmtDue(t.due_date).text}</span>}
+            </span>)}
+          </div>}
+        </div>;
+      })}
+    </div>}
+
+    {showForm&&<TaskForm task={editTask} members={members} onSave={saveTask} onClose={()=>{setShowForm(false);setEditTask(null);}}/>}
+    {showLogin&&<AdminLoginModal pwdHash={pwdHash} onLogin={()=>{setIsAdmin(true);setShowLogin(false);setShowAdmin(true);}} onClose={()=>setShowLogin(false)}/>}
+    {showAdmin&&<AdminPanel members={members} setMembers={setMembers} tasks={tasks} setTasks={setTasks}
+      pwdHash={pwdHash} setPwdHash={setPwdHash} setError={setError} onClose={()=>setShowAdmin(false)}/>}
+  </div>;
+}
+
+function ManagerCard({task,members,onToggle,onEdit,onDelete,highlight}){
+  const cfg=CAT[task.category];
+  return <div style={{background:task.done?"#0E0E0E":"#131313",border:`1px solid ${task.done?"#1A1A1A":cfg.color+"25"}`,
+    borderLeft:`3px solid ${task.done?"#32D74B":cfg.color}`,borderRadius:10,padding:"11px 12px",
+    display:"flex",alignItems:"flex-start",gap:10,opacity:task.done?.58:1,
+    animation:highlight?"newTask .6s ease 3":undefined}}>
+    <button onClick={()=>onToggle(task)} style={{width:20,height:20,borderRadius:"50%",flexShrink:0,marginTop:1,
+      border:`2px solid ${task.done?"#32D74B":cfg.color}`,background:task.done?"#32D74B":"transparent",
+      cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s"}}>
+      {task.done&&<span style={{color:"#fff",fontSize:9,fontWeight:800}}>✓</span>}
+    </button>
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{fontWeight:600,fontSize:13,color:task.done?"#3A3A3C":"#E5E5EA",
+        textDecoration:task.done?"line-through":"none",marginBottom:5,lineHeight:1.3}}>{task.title}</div>
+      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+        <Avatar name={task.assignee} members={members} size={16} ring={false}/>
+        <span style={{fontSize:11,color:"#8E8E93"}}>{task.assignee}</span>
+        <Badge category={task.category} due_date={task.due_date}/>
+        {task.done&&task.done_at&&<span style={{fontSize:9,color:"#32D74B",fontFamily:"monospace"}}>✓ {fmtFull(task.done_at)}</span>}
+      </div>
+    </div>
+    <div style={{display:"flex",gap:1,flexShrink:0}}>
+      <button onClick={()=>onEdit(task)} style={{background:"transparent",border:"none",cursor:"pointer",color:"#3A3A3C",fontSize:14,padding:"3px 5px"}}
+        onMouseEnter={e=>e.currentTarget.style.color="#8E8E93"} onMouseLeave={e=>e.currentTarget.style.color="#3A3A3C"}>✏️</button>
+      <button onClick={()=>onDelete(task.id)} style={{background:"transparent",border:"none",cursor:"pointer",color:"#3A3A3C",fontSize:14,padding:"3px 5px"}}
+        onMouseEnter={e=>e.currentTarget.style.color="#FF453A"} onMouseLeave={e=>e.currentTarget.style.color="#3A3A3C"}>🗑️</button>
+    </div>
+  </div>;
+}
+
+function TaskForm({task,members,onSave,onClose}){
+  const [form,setForm]=useState({title:task?.title||"",assignee:task?.assignee||members[0]||"",
+    category:task?.category||"Daily",original_category:task?.original_category||"Daily",
+    due_date:NEEDS_DUE.includes(task?.category)?task?.due_date||"":"",id:task?.id||null});
+  const set=(k,v)=>setForm(f=>{const n={...f,[k]:v};if(k==="category"){n.original_category=v;if(!NEEDS_DUE.includes(v))n.due_date="";}return n;});
+  const hasDue=NEEDS_DUE.includes(form.category),dueErr=hasDue&&!form.due_date,valid=form.title.trim()&&form.assignee&&!dueErr;
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.9)",zIndex:200,
+    display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={onClose}>
+    <div style={{background:"#141414",border:"1px solid #2C2C2E",borderRadius:"20px 20px 0 0",
+      padding:"22px 20px 40px",width:"100%",maxWidth:520}} onClick={e=>e.stopPropagation()}>
+      <div style={{width:36,height:4,background:"#2C2C2E",borderRadius:2,margin:"0 auto 18px"}}/>
+      <div style={{fontWeight:800,fontSize:15,color:"#F2F2F7",marginBottom:18}}>{task?"Edit task":"New task"}</div>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div>
+          <div style={{fontSize:10,color:"#636366",fontWeight:700,marginBottom:5}}>TITLE</div>
+          <input value={form.title} onChange={e=>set("title",e.target.value)} placeholder="Describe the task…" style={inpBase} autoFocus/>
+        </div>
+        <div>
+          <div style={{fontSize:10,color:"#636366",fontWeight:700,marginBottom:5}}>ASSIGNED TO</div>
+          <select value={form.assignee} onChange={e=>set("assignee",e.target.value)} style={inpBase}>
+            {members.map(m=><option key={m}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{fontSize:10,color:"#636366",fontWeight:700,marginBottom:8}}>CATEGORY</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+            {CATEGORIES.map(cat=><button key={cat} onClick={()=>set("category",cat)} style={{
+              padding:"10px 4px",borderRadius:10,cursor:"pointer",
+              background:form.category===cat?CAT[cat].bg:"#1C1C1E",
+              border:`2px solid ${form.category===cat?CAT[cat].color:"#2C2C2E"}`,
+              color:form.category===cat?CAT[cat].color:"#48484A",fontWeight:700,fontSize:9,transition:"all .15s",
+              display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+              <span style={{fontSize:18}}>{CAT[cat].icon}</span>
+              <span>{cat.toUpperCase()}</span>
+              <span style={{fontSize:7,opacity:.6,fontWeight:400}}>{CAT[cat].hint}</span>
+            </button>)}
+          </div>
+        </div>
+        {hasDue&&<div>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
+            <div style={{fontSize:10,color:"#636366",fontWeight:700}}>DUE DATE</div>
+            <span style={{fontSize:9,color:"#FF453A",fontWeight:700}}>* required</span>
+          </div>
+          <input type="date" value={form.due_date} min={todayStr()} onChange={e=>set("due_date",e.target.value)}
+            style={{...inpBase,border:`1px solid ${dueErr?"#FF453A":"#2C2C2E"}`,colorScheme:"dark"}}/>
+          {form.due_date&&(()=>{const d=new Date(form.due_date);d.setHours(0,0,0,0);
+            const diff=Math.round((d-today())/86400000),{text,color}=fmtDue(form.due_date);
+            return <div style={{marginTop:6,fontSize:11,color,display:"flex",gap:6}}>
+              ⏰ {text}
+              {diff<=0&&<span style={{color:"#FF453A",fontSize:10}}>→ will escalate to 🔥 Daily</span>}
+              {diff>0&&diff<=7&&<span style={{color:"#FF9F0A",fontSize:10}}>→ will appear as 📅 Weekly</span>}
+            </div>;})()}
+          {dueErr&&<div style={{marginTop:5,fontSize:10,color:"#FF453A"}}>⚠ Please pick a due date</div>}
+        </div>}
+        <div style={{display:"flex",gap:9,marginTop:4}}>
+          <button onClick={onClose} style={{flex:1,padding:"12px",borderRadius:10,border:"1px solid #2C2C2E",
+            background:"transparent",color:"#8E8E93",fontWeight:700,fontSize:12,cursor:"pointer"}}>CANCEL</button>
+          <button onClick={()=>valid&&onSave(form)} style={{flex:2,padding:"12px",borderRadius:10,border:"none",
+            background:valid?"linear-gradient(135deg,#5E5CE6,#BF5AF2)":"#1C1C1E",
+            color:valid?"#fff":"#3A3A3C",fontWeight:700,fontSize:12,cursor:valid?"pointer":"not-allowed",
+            boxShadow:valid?"0 4px 18px rgba(94,92,230,.35)":"none"}}>
+            {task?"SAVE":"CREATE TASK"}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+/* ═══════════════════════════════════════
+   ROOT — avec polling Neon
+═══════════════════════════════════════ */
+function App(){
+  const [view,setView]     = useState("tv");
+  const [tasks,setTasks]   = useState([]);
+  const [members,setMembers]= useState([]);
+  const [pwdHash,setPwdHash]= useState(null);
+  const [loading,setLoading]= useState(true);
+  const [error,setError]   = useState(null);
+  const [toasts,setToasts] = useState([]);
+  const [history,setHistory]= useState([]);
+  const prevDone           = useRef(new Set());
+  const isTV               = useRef(false);
+
+  // Hash initial password
+  useEffect(()=>{ sha256("rodeokid").then(setPwdHash); },[]);
+
+  // Chargement initial
+  useEffect(()=>{
+    Promise.all([api.getTasks(), api.getMembers()])
+      .then(([t,m])=>{
+        const escalated=t.map(escalate);
+        setTasks(escalated);
+        setMembers(m);
+        prevDone.current=new Set(escalated.filter(x=>x.done).map(x=>x.id));
+        setLoading(false);
+      })
+      .catch(e=>{ setError("Failed to load data: "+e.message); setLoading(false); });
+  },[]);
+
+  // Polling toutes les 5s pour la TV
+  useEffect(()=>{
+    const poll=async()=>{
+      try {
+        const [t,m]=await Promise.all([api.getTasks(), api.getMembers()]);
+        const escalated=t.map(escalate);
+        // Toasts pour nouvelles tâches cochées
+        escalated.forEach(task=>{
+          if(task.done && !prevDone.current.has(task.id)){
+            const toast={...task,toastId:Date.now()+Math.random()};
+            setToasts(p=>[...p,toast]);
+            setTimeout(()=>setToasts(p=>p.filter(x=>x.toastId!==toast.toastId)),4500);
+            prevDone.current.add(task.id);
+          }
+          if(!task.done) prevDone.current.delete(task.id);
+        });
+        setTasks(escalated);
+        setMembers(m);
+      } catch(e){ /* silently ignore polling errors */ }
+    };
+    const i=setInterval(poll, POLL_MS);
+    return()=>clearInterval(i);
+  },[]);
+
+  // Auto-escalation toutes les minutes
+  useEffect(()=>{
+    const i=setInterval(()=>setTasks(p=>p.map(escalate)),60000);
+    return()=>clearInterval(i);
+  },[]);
+
+  if(!pwdHash||loading) return <div style={{width:"100vw",height:"100vh",background:"#080808",
+    display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
+    <div style={{width:42,height:42,borderRadius:11,background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",
+      display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>⚡</div>
+    <div style={{color:"#3A3A3C",fontSize:13,fontFamily:"system-ui,sans-serif"}}>Loading Team Board…</div>
+  </div>;
+
+  return <div style={{fontFamily:"system-ui,sans-serif"}}>
+    <Toast toasts={toasts}/>
+    <UndoBar history={history} onUndo={()=>{
+      setHistory(h=>{if(!h.length)return h;
+        const last=h[h.length-1];
+        if(last.tasks)setTasks(last.tasks);
+        if(last.members)setMembers(last.members);
+        return h.slice(0,-1);});
+    }}/>
+    <ErrorBanner msg={error} onClose={()=>setError(null)}/>
+    {view==="tv"
+      ?<TVView tasks={tasks} members={members} onSwitch={()=>setView("manager")}/>
+      :<ManagerView tasks={tasks} setTasks={setTasks} members={members} setMembers={setMembers}
+          pwdHash={pwdHash} setPwdHash={setPwdHash}
+          setError={setError}
+          onSwitch={()=>setView("tv")}/>}
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
