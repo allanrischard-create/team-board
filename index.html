@@ -8,20 +8,100 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <style>
+/* ─── SIGNS Font ─── */
+@font-face{font-family:'SIGNS';src:url('/signs-bold.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:'SIGNS';src:url('/signs-regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'SIGNS';src:url('/signs-light.woff2') format('woff2');font-weight:300;font-style:normal;font-display:swap}
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{background:#080808;height:100%;font-family:system-ui,sans-serif}
+html,body{height:100%;font-family:'SIGNS','system-ui',sans-serif}
+.font-signs{font-family:'SIGNS','system-ui',sans-serif;text-transform:uppercase;letter-spacing:.04em;font-weight:700}
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-thumb{background:#2C2C2E;border-radius:4px}
 select,input,button{outline:none;font-family:inherit}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes newTask{0%,100%{box-shadow:0 0 0 0 #32D74B00}50%{box-shadow:0 0 0 3px #32D74B50}}
 @keyframes slideIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* Theme toggle */
+.theme-toggle{width:44px;height:24px;border-radius:12px;border:none;cursor:pointer;position:relative;transition:background .3s;flex-shrink:0}
+.theme-toggle::after{content:'';position:absolute;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .3s;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+/* Responsive */
+.cat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px}
+.daily-mgr-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+@media(max-width:520px){
+  .cat-grid{grid-template-columns:repeat(2,1fr)!important}
+  .daily-mgr-grid{grid-template-columns:1fr!important}
+  .mgr-title{display:none}
+  .mgr-header{gap:5px!important;padding:8px 10px!important}
+}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useRef, useCallback, memo } = React;
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+/* ─── THEMES ─── */
+const DARK = {
+  name:       "dark",
+  bg:         "#080808",
+  surface:    "#0D0D0D",
+  surface2:   "#141414",
+  surface3:   "#0A0A0A",
+  card:       "#131313",
+  card2:      "#111111",
+  card3:      "#161616",
+  card4:      "#0E0E0E",
+  panel:      "#0F0F0F",
+  border:     "#2C2C2E",
+  border2:    "#1C1C1E",
+  border3:    "#1A1A1A",
+  input:      "#1C1C1E",
+  text:       "#F2F2F7",
+  text2:      "#E5E5EA",
+  text3:      "#AEAEB2",
+  textSub:    "#8E8E93",
+  textMute:   "#636366",
+  textFade:   "#48484A",
+  textGhost:  "#3A3A3C",
+  textDeep:   "#2C2C2E",
+  avatarRing: "#0D0D0D",
+  overlay:    "rgba(0,0,0,.92)",
+  shadow:     "0 16px 48px rgba(0,0,0,.7)",
+  logoGrad:   "linear-gradient(135deg,#5E5CE6,#BF5AF2)",
+  toggleBg:   "#3A3A3C",
+  toggleLeft: "3px",
+};
+const LIGHT = {
+  name:       "light",
+  bg:         "#FFFFFF",
+  surface:    "#FAFAFA",
+  surface2:   "#F5F5F5",
+  surface3:   "#F0F0F0",
+  card:       "#FFFFFF",
+  card2:      "#F8F8F8",
+  card3:      "#F5F5F5",
+  card4:      "#FDFDFD",
+  panel:      "#FFFFFF",
+  border:     "#E0E0E0",
+  border2:    "#EBEBEB",
+  border3:    "#F0F0F0",
+  input:      "#F5F5F5",
+  text:       "#000000",
+  text2:      "#111111",
+  text3:      "#333333",
+  textSub:    "#555555",
+  textMute:   "#888888",
+  textFade:   "#AAAAAA",
+  textGhost:  "#CCCCCC",
+  textDeep:   "#DDDDDD",
+  avatarRing: "#FFFFFF",
+  overlay:    "rgba(0,0,0,.75)",
+  shadow:     "0 8px 32px rgba(0,0,0,.12)",
+  logoGrad:   "linear-gradient(135deg,#000000,#333333)",
+  toggleBg:   "#000000",
+  toggleLeft: "23px",
+};
 
 /* ─── CONFIG ─── */
 const CATEGORIES = ["Daily","Weekly","Monthly","Backlog"];
@@ -35,22 +115,22 @@ const MCOLORS = ["#5E5CE6","#E8705A","#4ECDC4","#F9CA24","#A29BFE","#FD79A8","#0
 const ADMIN_EMAIL = "allan.rischard@sheriffprojects.com";
 const MAX_HISTORY = 15;
 const NEEDS_DUE   = ["Weekly","Monthly","Backlog"];
-const POLL_MS     = 5000; // polling interval for TV real-time
+const POLL_MS     = 5000;
 
 /* ─── CRYPTO ─── */
-async function sha256(str) {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+async function sha256(str){
+  const buf=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
 }
 
 /* ─── HELPERS ─── */
-const today     = () => { const d=new Date(); d.setHours(0,0,0,0); return d; };
-const todayStr  = () => today().toISOString().split("T")[0];
-const fmtTime   = iso => new Date(iso).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
-const fmtDate   = iso => new Date(iso).toLocaleDateString("fr-FR",{day:"2-digit",month:"short"});
-const fmtFull   = iso => `${fmtDate(iso)} ${fmtTime(iso)}`;
-const mColor    = (n,m) => MCOLORS[Math.max(0,m.indexOf(n))%MCOLORS.length];
-const sortTasks = ts => [...ts].sort((a,b)=>a.done!==b.done?(a.done?1:-1):CAT[a.category].rank-CAT[b.category].rank);
+const today    = ()=>{ const d=new Date(); d.setHours(0,0,0,0); return d; };
+const todayStr = ()=>today().toISOString().split("T")[0];
+const fmtTime  = iso=>new Date(iso).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+const fmtDate  = iso=>new Date(iso).toLocaleDateString("fr-FR",{day:"2-digit",month:"short"});
+const fmtFull  = iso=>`${fmtDate(iso)} ${fmtTime(iso)}`;
+const mColor   = (n,m)=>MCOLORS[Math.max(0,m.indexOf(n))%MCOLORS.length];
+const sortTasks= ts=>[...ts].sort((a,b)=>a.done!==b.done?(a.done?1:-1):CAT[a.category].rank-CAT[b.category].rank);
 
 function fmtDue(iso){
   const d=new Date(iso); d.setHours(0,0,0,0);
@@ -70,55 +150,70 @@ function escalate(task){
   return cat===task.category?task:{...task,category:cat};
 }
 
-/* ─── API CALLS ─── */
-async function apiFetch(url, options={}) {
-  const res = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
+/* ─── API ─── */
+async function apiFetch(url,options={}){
+  const res=await fetch(url,{
+    headers:{"Content-Type":"application/json"},
     ...options,
-    body: options.body ? JSON.stringify(options.body) : undefined,
+    body:options.body?JSON.stringify(options.body):undefined,
   });
-  if (!res.ok) throw new Error(`API error ${res.status}`);
+  if(!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }
-
-const api = {
-  getTasks:    ()       => apiFetch("/api/tasks"),
-  getMembers:  ()       => apiFetch("/api/members"),
-  addTask:     (data)   => apiFetch("/api/tasks", { method:"POST", body:data }),
-  updateTask:  (data)   => apiFetch("/api/tasks", { method:"PUT",  body:data }),
-  deleteTask:  (id)     => apiFetch(`/api/tasks?id=${id}`, { method:"DELETE" }),
-  addMember:   (name)   => apiFetch("/api/members", { method:"POST", body:{name} }),
-  deleteMember:(name)   => apiFetch(`/api/members?name=${encodeURIComponent(name)}`, { method:"DELETE" }),
+const api={
+  getTasks:    ()      =>apiFetch("/api/tasks"),
+  getMembers:  ()      =>apiFetch("/api/members"),
+  addTask:     (d)     =>apiFetch("/api/tasks",{method:"POST",body:d}),
+  updateTask:  (d)     =>apiFetch("/api/tasks",{method:"PUT",body:d}),
+  deleteTask:  (id)    =>apiFetch(`/api/tasks?id=${id}`,{method:"DELETE"}),
+  addMember:   (name)  =>apiFetch("/api/members",{method:"POST",body:{name}}),
+  deleteMember:(name)  =>apiFetch(`/api/members?name=${encodeURIComponent(name)}`,{method:"DELETE"}),
 };
 
-let uid = 100;
+/* ─── THEME TOGGLE ─── */
+function ThemeSwitch({dark,onToggle}){
+  return (
+    <button className="theme-toggle"
+      onClick={onToggle}
+      title={dark?"Passer en mode clair":"Passer en mode sombre"}
+      style={{background:dark?DARK.toggleBg:LIGHT.toggleBg}}>
+      <span style={{position:"absolute",top:3,left:dark?DARK.toggleLeft:LIGHT.toggleLeft,
+        width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left .3s",
+        display:"flex",alignItems:"center",justifyContent:"center",fontSize:10}}>
+        {dark?"🌙":"☀️"}
+      </span>
+    </button>
+  );
+}
 
 /* ─── ATOMS ─── */
-function Avatar({name,members,size=32,ring=true}){
+function Avatar({name,members,size=32,ring=true,th}){
   const c=mColor(name,members);
+  const ringColor=th?th.avatarRing:"#0D0D0D";
   return <div style={{width:size,height:size,borderRadius:"50%",background:c,flexShrink:0,
     display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:size*.38,
-    boxShadow:ring?`0 0 0 2px #0D0D0D,0 0 0 3.5px ${c}60`:"none"}}>{name[0].toUpperCase()}</div>;
+    boxShadow:ring?`0 0 0 2px ${ringColor},0 0 0 3.5px ${c}60`:"none"}}>{name[0].toUpperCase()}</div>;
 }
 
 function Badge({category,due_date}){
   const c=CAT[category],due=due_date?fmtDue(due_date):null;
   return <span style={{display:"inline-flex",alignItems:"center",gap:4,background:c.bg,color:c.color,
-    border:`1px solid ${c.color}35`,padding:"2px 8px",borderRadius:20,fontSize:9,fontWeight:700,whiteSpace:"nowrap"}}>
-    {c.icon} {category.toUpperCase()}
+    border:`1px solid ${c.color}35`,padding:"2px 8px",borderRadius:20,fontSize:9,fontWeight:700,whiteSpace:"nowrap",
+    fontFamily:"'SIGNS',system-ui",textTransform:"uppercase",letterSpacing:".06em"}}>
+    {c.icon} {category}
     {due&&<span style={{color:due.color,fontWeight:600,fontSize:8,borderLeft:`1px solid ${c.color}40`,paddingLeft:4}}>{due.text}</span>}
   </span>;
 }
 
-function ConfirmModal({message,onConfirm,onCancel}){
-  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:400,
+function ConfirmModal({message,onConfirm,onCancel,th}){
+  return <div style={{position:"fixed",inset:0,background:th.overlay,zIndex:400,
     display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onCancel}>
-    <div style={{background:"#141414",border:"1px solid #2C2C2E",borderRadius:16,padding:"24px 22px",
+    <div style={{background:th.surface2,border:`1px solid ${th.border}`,borderRadius:16,padding:"24px 22px",
       width:300,display:"flex",flexDirection:"column",gap:16}} onClick={e=>e.stopPropagation()}>
-      <div style={{fontSize:13,color:"#F2F2F7",lineHeight:1.5}}>{message}</div>
+      <div style={{fontSize:13,color:th.text,lineHeight:1.5}}>{message}</div>
       <div style={{display:"flex",gap:8}}>
-        <button onClick={onCancel} style={{flex:1,padding:"10px",borderRadius:9,border:"1px solid #2C2C2E",
-          background:"transparent",color:"#8E8E93",fontWeight:700,fontSize:12,cursor:"pointer"}}>CANCEL</button>
+        <button onClick={onCancel} style={{flex:1,padding:"10px",borderRadius:9,border:`1px solid ${th.border}`,
+          background:"transparent",color:th.textSub,fontWeight:700,fontSize:12,cursor:"pointer"}}>CANCEL</button>
         <button onClick={onConfirm} style={{flex:1,padding:"10px",borderRadius:9,border:"none",
           background:"#FF453A",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>CONFIRM</button>
       </div>
@@ -126,37 +221,37 @@ function ConfirmModal({message,onConfirm,onCancel}){
   </div>;
 }
 
-function useConfirm(){
+function useConfirm(th){
   const [state,setState]=useState(null);
   const confirm=(msg)=>new Promise(res=>setState({message:msg,resolve:res}));
-  const Modal=state?<ConfirmModal message={state.message}
+  const Modal=state?<ConfirmModal th={th} message={state.message}
     onConfirm={()=>{setState(null);state.resolve(true);}}
     onCancel= {()=>{setState(null);state.resolve(false);}}/>:null;
   return [confirm,Modal];
 }
 
-function Toast({toasts}){
+function Toast({toasts,th}){
   return <div style={{position:"fixed",top:16,right:16,zIndex:9999,display:"flex",flexDirection:"column",gap:8,pointerEvents:"none"}}>
-    {toasts.map(n=><div key={n.toastId} style={{background:"#161616",border:"1px solid #32D74B50",
-      borderLeft:"3px solid #32D74B",borderRadius:12,padding:"12px 16px",width:290,color:"#F2F2F7",
-      boxShadow:"0 16px 48px rgba(0,0,0,.7)",display:"flex",alignItems:"flex-start",gap:10,animation:"slideIn .3s ease"}}>
+    {toasts.map(n=><div key={n.toastId} style={{background:th.card3,border:`1px solid rgba(50,215,75,.4)`,
+      borderLeft:"3px solid #32D74B",borderRadius:12,padding:"12px 16px",width:290,color:th.text,
+      boxShadow:th.shadow,display:"flex",alignItems:"flex-start",gap:10,animation:"slideIn .3s ease"}}>
       <span style={{fontSize:18,flexShrink:0}}>✅</span>
       <div>
-        <div style={{fontWeight:700,fontSize:11,color:"#32D74B",marginBottom:2}}>DONE</div>
-        <div style={{fontSize:12,color:"#AEAEB2"}}><b style={{color:"#F2F2F7"}}>{n.assignee}</b> — <i>{n.title}</i></div>
+        <div style={{fontWeight:800,fontSize:11,color:"#32D74B",marginBottom:2,fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>DONE</div>
+        <div style={{fontSize:12,color:th.text3}}><b style={{color:th.text}}>{n.assignee}</b> — <i>{n.title}</i></div>
       </div>
     </div>)}
   </div>;
 }
 
-function UndoBar({history,onUndo}){
+function UndoBar({history,onUndo,th}){
   if(!history.length) return null;
   const last=history[history.length-1];
   return <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:500,
-    background:"#1C1C1E",border:"1px solid #3A3A3C",borderRadius:14,padding:"10px 18px",
-    display:"flex",alignItems:"center",gap:14,boxShadow:"0 8px 32px rgba(0,0,0,.7)",minWidth:260}}>
-    <span style={{fontSize:13,color:"#AEAEB2",flex:1}}>
-      <span style={{color:"#636366",fontSize:10}}>{history.length} · </span>{last.label}
+    background:th.surface2,border:`1px solid ${th.border}`,borderRadius:14,padding:"10px 18px",
+    display:"flex",alignItems:"center",gap:14,boxShadow:th.shadow,minWidth:260}}>
+    <span style={{fontSize:13,color:th.textSub,flex:1}}>
+      <span style={{color:th.textMute,fontSize:10}}>{history.length} · </span>{last.label}
     </span>
     <button onClick={onUndo} style={{background:"#5E5CE6",border:"none",borderRadius:8,
       color:"#fff",fontWeight:700,fontSize:11,padding:"6px 14px",cursor:"pointer"}}>↩ Undo</button>
@@ -177,111 +272,132 @@ function ErrorBanner({msg,onClose}){
 /* ═══════════════════════════════════════
    TV VIEW
 ═══════════════════════════════════════ */
-function TVView({tasks,members,onSwitch}){
+function TVView({tasks,members,onSwitch,dark,onToggleTheme,th}){
   const [clock,setClock]=useState(new Date());
   const [tvMode,setTvMode]=useState("all");
+  const [zoom,setZoom]=useState(()=>parseFloat(localStorage.getItem("tvZoom")||"1"));
   useEffect(()=>{const i=setInterval(()=>setClock(new Date()),1000);return()=>clearInterval(i);},[]);
   const sorted=sortTasks(tasks),pending=sorted.filter(t=>!t.done),done=sorted.filter(t=>t.done);
   const pct=tasks.length?Math.round(done.length/tasks.length*100):0;
   const dailyN=pending.filter(t=>t.category==="Daily").length;
+  const ZOOMS=[1,1.25,1.5,2];
+  const cycleZoom=()=>{
+    const next=ZOOMS[(ZOOMS.indexOf(zoom)+1)%ZOOMS.length];
+    setZoom(next); localStorage.setItem("tvZoom",next);
+  };
 
-  return <div style={{width:"100%",height:"100vh",background:"#080808",display:"flex",flexDirection:"column",overflow:"hidden"}}>
-    <div style={{background:"#0D0D0D",borderBottom:"1px solid #1C1C1C",display:"flex",alignItems:"center",
+  const btnStyle={background:th.surface2,border:`1px solid ${th.border}`,borderRadius:9,
+    color:th.textMute,fontSize:10,fontWeight:700,padding:"8px 14px",cursor:"pointer",marginLeft:8,
+    fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"};
+
+  return <div style={{width:"100%",height:"100vh",background:th.bg,display:"flex",flexDirection:"column",overflow:"hidden",zoom}}>
+    {/* Header */}
+    <div style={{background:th.surface,borderBottom:`1px solid ${th.border2}`,display:"flex",alignItems:"center",
       padding:"0 40px",gap:20,height:68,flexShrink:0}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <div style={{width:42,height:42,borderRadius:11,background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",
+        <div style={{width:42,height:42,borderRadius:11,background:th.logoGrad,
           display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>⚡</div>
         <div>
-          <div style={{fontWeight:800,fontSize:20,color:"#F2F2F7",letterSpacing:"-.03em",lineHeight:1}}>Team Board</div>
-          <div style={{fontSize:9,color:"#3A3A3C",letterSpacing:".1em"}}>LIVE · {clock.toLocaleDateString("fr-FR",{weekday:"long",day:"2-digit",month:"long"})}</div>
+          <div className="font-signs" style={{fontWeight:900,fontSize:22,color:th.text,lineHeight:1}}>TEAM BOARD</div>
+          <div style={{fontSize:9,color:th.textGhost,letterSpacing:".1em",fontFamily:"'SIGNS',system-ui"}}>
+            LIVE · {clock.toLocaleDateString("fr-FR",{weekday:"long",day:"2-digit",month:"long"}).toUpperCase()}
+          </div>
         </div>
       </div>
-      <div style={{display:"flex",background:"#141414",border:"1px solid #2C2C2E",borderRadius:10,padding:3,gap:2,marginLeft:8}}>
+      {/* Mode toggle */}
+      <div style={{display:"flex",background:th.surface2,border:`1px solid ${th.border}`,borderRadius:10,padding:3,gap:2,marginLeft:8}}>
         {[{id:"all",label:"📋 ALL"},{id:"daily",label:"🔥 DAILY"}].map(m=>(
           <button key={m.id} onClick={()=>setTvMode(m.id)} style={{padding:"6px 18px",borderRadius:8,border:"none",
             cursor:"pointer",fontWeight:800,fontSize:11,letterSpacing:".06em",transition:"all .2s",
+            fontFamily:"'SIGNS',system-ui",
             background:tvMode===m.id?(m.id==="daily"?"linear-gradient(135deg,#FF453A,#FF9F0A)":"linear-gradient(135deg,#5E5CE6,#BF5AF2)"):"transparent",
-            color:tvMode===m.id?"#fff":"#636366",boxShadow:tvMode===m.id?"0 2px 12px rgba(0,0,0,.4)":"none"}}>
+            color:tvMode===m.id?"#fff":th.textMute,boxShadow:tvMode===m.id?"0 2px 12px rgba(0,0,0,.2)":"none"}}>
             {m.label}
           </button>
         ))}
       </div>
       <div style={{flex:1}}/>
+      {/* Stats */}
       <div style={{display:"flex",gap:10}}>
-        {[{l:"IN PROGRESS",v:pending.length,c:"#F2F2F7"},{l:"DONE",v:done.length,c:"#32D74B"},
+        {[{l:"IN PROGRESS",v:pending.length,c:th.text},{l:"DONE",v:done.length,c:"#32D74B"},
           ...(dailyN>0?[{l:"DAILY 🔥",v:dailyN,c:"#FF453A"}]:[]),{l:"PROGRESS",v:`${pct}%`,c:"#5E5CE6"}]
-          .map(k=><div key={k.l} style={{background:"#141414",border:`1px solid ${k.c}18`,borderRadius:10,
+          .map(k=><div key={k.l} style={{background:th.surface2,border:`1px solid ${th.border}`,borderRadius:10,
             padding:"8px 18px",textAlign:"center",minWidth:80}}>
-            <div style={{fontWeight:800,fontSize:24,color:k.c,lineHeight:1}}>{k.v}</div>
-            <div style={{fontSize:8,color:"#3A3A3C",letterSpacing:".08em",marginTop:2}}>{k.l}</div>
+            <div className="font-signs" style={{fontWeight:900,fontSize:26,color:k.c,lineHeight:1}}>{k.v}</div>
+            <div style={{fontSize:8,color:th.textGhost,letterSpacing:".08em",marginTop:2,fontFamily:"'SIGNS',system-ui"}}>{k.l}</div>
           </div>)}
       </div>
+      {/* Clock */}
       <div style={{textAlign:"right",paddingLeft:8}}>
-        <div style={{fontFamily:"monospace",fontSize:34,color:"#F2F2F7",fontWeight:700,lineHeight:1}}>
+        <div className="font-signs" style={{fontSize:36,color:th.text,fontWeight:900,lineHeight:1}}>
           {clock.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</div>
-        <div style={{fontSize:9,color:"#3A3A3C",marginTop:2}}>{clock.getSeconds()}s</div>
+        <div style={{fontSize:9,color:th.textGhost,marginTop:2}}>{clock.getSeconds()}s</div>
       </div>
-      <button onClick={onSwitch} style={{background:"#141414",border:"1px solid #2C2C2E",borderRadius:9,
-        color:"#636366",fontSize:10,fontWeight:700,padding:"8px 14px",cursor:"pointer",marginLeft:8}}>⚙ MANAGE</button>
+      <ThemeSwitch dark={dark} onToggle={onToggleTheme}/>
+      <button onClick={cycleZoom} style={{...btnStyle,color:"#FF9F0A"}}>
+        🔍 {zoom===1?"100%":zoom===1.25?"125%":zoom===1.5?"150%":"200%"}</button>
+      <button onClick={onSwitch} style={btnStyle}>⚙ MANAGE</button>
     </div>
     {tvMode==="all"
-      ?<TVAllMode tasks={tasks} pending={pending} done={done} members={members}/>
-      :<TVDailyMode tasks={tasks} members={members}/>}
+      ?<TVAllMode tasks={tasks} pending={pending} done={done} members={members} th={th}/>
+      :<TVDailyMode tasks={tasks} members={members} th={th}/>}
   </div>;
 }
 
-function TVAllMode({tasks,pending,done,members}){
+function TVAllMode({tasks,pending,done,members,th}){
   const mStats=members.map(m=>({name:m,total:tasks.filter(t=>t.assignee===m).length,done:tasks.filter(t=>t.assignee===m&&t.done).length}));
   return <div style={{flex:1,display:"grid",gridTemplateColumns:"1fr 1fr 1fr 240px",overflow:"hidden"}}>
-    <div style={{overflowY:"auto",padding:"20px 16px 20px 24px",borderRight:"1px solid #141414",display:"flex",flexDirection:"column",gap:14}}>
+    <div style={{overflowY:"auto",padding:"20px 16px 20px 24px",borderRight:`1px solid ${th.border3}`,display:"flex",flexDirection:"column",gap:14}}>
       {["Daily","Weekly"].map(cat=>{const g=pending.filter(t=>t.category===cat);if(!g.length)return null;
-        return <TVGroup key={cat} cat={cat} tasks={g} members={members}/>;
+        return <TVGroup key={cat} cat={cat} tasks={g} members={members} th={th}/>;
       })}
     </div>
-    <div style={{overflowY:"auto",padding:"20px 16px",borderRight:"1px solid #141414",display:"flex",flexDirection:"column",gap:14}}>
+    <div style={{overflowY:"auto",padding:"20px 16px",borderRight:`1px solid ${th.border3}`,display:"flex",flexDirection:"column",gap:14}}>
       {["Monthly","Backlog"].map(cat=>{const g=pending.filter(t=>t.category===cat);if(!g.length)return null;
-        return <TVGroup key={cat} cat={cat} tasks={g} members={members}/>;
+        return <TVGroup key={cat} cat={cat} tasks={g} members={members} th={th}/>;
       })}
     </div>
-    <div style={{overflowY:"auto",padding:"20px 16px",borderRight:"1px solid #141414",display:"flex",flexDirection:"column",gap:6}}>
+    <div style={{overflowY:"auto",padding:"20px 16px",borderRight:`1px solid ${th.border3}`,display:"flex",flexDirection:"column",gap:6}}>
       {done.length>0&&<>
         <div style={{display:"inline-flex",alignItems:"center",gap:7,marginBottom:4,background:"rgba(50,215,75,.08)",
           border:"1px solid rgba(50,215,75,.2)",borderRadius:9,padding:"5px 14px",width:"fit-content"}}>
-          <span>✅</span><span style={{fontWeight:800,fontSize:11,color:"#32D74B"}}>DONE</span>
-          <span style={{fontFamily:"monospace",fontSize:9,color:"#32D74B60"}}>({done.length})</span>
+          <span>✅</span>
+          <span className="font-signs" style={{fontWeight:800,fontSize:11,color:"#32D74B"}}>DONE</span>
+          <span style={{fontFamily:"monospace",fontSize:9,color:"rgba(50,215,75,.6)"}}>({done.length})</span>
         </div>
-        {done.map(t=><TVRow key={t.id} task={t} members={members}/>)}
+        {done.map(t=><TVRow key={t.id} task={t} members={members} th={th}/>)}
       </>}
-      {!done.length&&<div style={{color:"#2C2C2E",fontSize:13,fontWeight:700,textAlign:"center",marginTop:40}}>No tasks done yet</div>}
+      {!done.length&&<div style={{color:th.textGhost,fontSize:13,fontWeight:700,textAlign:"center",marginTop:40,
+        fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>NO TASKS DONE YET</div>}
     </div>
-    <div style={{background:"#0A0A0A",overflowY:"auto",padding:"20px 14px"}}>
-      <div style={{fontWeight:800,fontSize:9,color:"#2C2C2E",letterSpacing:".12em",marginBottom:12}}>TEAM</div>
+    <div style={{background:th.surface3,overflowY:"auto",padding:"20px 14px"}}>
+      <div className="font-signs" style={{fontWeight:800,fontSize:9,color:th.textGhost,letterSpacing:".12em",marginBottom:12}}>TEAM</div>
       <div style={{display:"flex",flexDirection:"column",gap:11}}>
         {mStats.map(m=>{const p2=m.total?Math.round(m.done/m.total*100):0,c=mColor(m.name,members);
           return <div key={m.name}>
             <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4}}>
-              <Avatar name={m.name} members={members} size={26}/>
+              <Avatar name={m.name} members={members} size={26} th={th}/>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:700,fontSize:11,color:"#E5E5EA",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.name}</div>
-                <div style={{fontFamily:"monospace",fontSize:8,color:"#48484A"}}>{m.done}/{m.total}</div>
+                <div className="font-signs" style={{fontWeight:700,fontSize:11,color:th.text2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.name}</div>
+                <div style={{fontFamily:"monospace",fontSize:8,color:th.textFade}}>{m.done}/{m.total}</div>
               </div>
-              <span style={{fontWeight:800,fontSize:11,color:p2===100?"#32D74B":c}}>{p2}%</span>
+              <span className="font-signs" style={{fontWeight:800,fontSize:11,color:p2===100?"#32D74B":c}}>{p2}%</span>
             </div>
-            <div style={{height:2,background:"#1C1C1E",borderRadius:2,overflow:"hidden"}}>
+            <div style={{height:2,background:th.border,borderRadius:2,overflow:"hidden"}}>
               <div style={{height:"100%",width:`${p2}%`,background:p2===100?"#32D74B":c,borderRadius:2}}/>
             </div>
           </div>;
         })}
       </div>
       {done.length>0&&<>
-        <div style={{fontWeight:800,fontSize:9,color:"#2C2C2E",letterSpacing:".12em",marginTop:20,marginBottom:8}}>RECENTLY DONE</div>
+        <div className="font-signs" style={{fontWeight:800,fontSize:9,color:th.textGhost,letterSpacing:".12em",marginTop:20,marginBottom:8}}>RECENTLY DONE</div>
         {[...done].sort((a,b)=>new Date(b.done_at)-new Date(a.done_at)).slice(0,5).map(t=>
-          <div key={t.id} style={{background:"#111",border:"1px solid #1A1A1A",borderRadius:7,padding:"6px 8px",marginBottom:4}}>
-            <div style={{fontSize:9,color:"#636366",marginBottom:2}}>{t.title}</div>
+          <div key={t.id} style={{background:th.card,border:`1px solid ${th.border3}`,borderRadius:7,padding:"6px 8px",marginBottom:4}}>
+            <div style={{fontSize:9,color:th.textMute,marginBottom:2}}>{t.title}</div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               <div style={{display:"flex",alignItems:"center",gap:3}}>
-                <Avatar name={t.assignee} members={members} size={12} ring={false}/>
-                <span style={{fontSize:8,color:"#8E8E93"}}>{t.assignee}</span>
+                <Avatar name={t.assignee} members={members} size={12} ring={false} th={th}/>
+                <span style={{fontSize:8,color:th.textSub}}>{t.assignee}</span>
               </div>
               {t.done_at&&<span style={{fontFamily:"monospace",fontSize:8,color:"#32D74B"}}>{fmtTime(t.done_at)}</span>}
             </div>
@@ -292,7 +408,7 @@ function TVAllMode({tasks,pending,done,members}){
   </div>;
 }
 
-function TVDailyMode({tasks,members}){
+function TVDailyMode({tasks,members,th}){
   const withDaily=members.filter(m=>tasks.some(t=>t.assignee===m&&t.category==="Daily"));
   const cols=Math.min(4,Math.max(2,Math.ceil(Math.sqrt(withDaily.length||1))));
   return <div style={{flex:1,overflowY:"auto",padding:"24px 32px"}}>
@@ -302,75 +418,79 @@ function TVDailyMode({tasks,members}){
         if(!all.length) return null;
         const pend=all.filter(t=>!t.done),dn=all.filter(t=>t.done);
         const pct=Math.round(dn.length/all.length*100),c=mColor(m,members),allDone=pct===100;
-        return <div key={m} style={{background:allDone?"rgba(50,215,75,.06)":"#0F0F0F",
+        return <div key={m} style={{background:allDone?"rgba(50,215,75,.06)":th.card,
           border:`1px solid ${allDone?"rgba(50,215,75,.3)":c+"30"}`,
           borderTop:`3px solid ${allDone?"#32D74B":c}`,borderRadius:14,padding:"16px 16px 14px"}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
             <div style={{width:44,height:44,borderRadius:"50%",background:c,flexShrink:0,
               display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:18,
-              boxShadow:`0 0 0 2px #0D0D0D,0 0 0 4px ${c}50`}}>{m[0].toUpperCase()}</div>
+              boxShadow:`0 0 0 2px ${th.bg},0 0 0 4px ${c}50`}}>{m[0].toUpperCase()}</div>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontWeight:800,fontSize:16,color:"#F2F2F7",lineHeight:1,marginBottom:3,
-                whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m}</div>
-              <div style={{fontSize:11,color:"#636366"}}>{dn.length}/{all.length} done</div>
+              <div className="font-signs" style={{fontWeight:900,fontSize:17,color:th.text,lineHeight:1,marginBottom:3,
+                whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.toUpperCase()}</div>
+              <div style={{fontSize:11,color:th.textMute}}>{dn.length}/{all.length} done</div>
             </div>
-            <div style={{fontWeight:800,fontSize:20,color:allDone?"#32D74B":pct>50?"#FF9F0A":c}}>{pct}%</div>
+            <div className="font-signs" style={{fontWeight:900,fontSize:22,color:allDone?"#32D74B":pct>50?"#FF9F0A":c}}>{pct}%</div>
           </div>
-          <div style={{height:3,background:"#1C1C1E",borderRadius:3,overflow:"hidden",marginBottom:8}}>
+          <div style={{height:3,background:th.border,borderRadius:3,overflow:"hidden",marginBottom:8}}>
             <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
             {pend.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:8,
-              background:"#1A1A1A",border:"1px solid #2C2C2E",borderRadius:8,padding:"7px 10px"}}>
+              background:th.card2,border:`1px solid ${th.border}`,borderRadius:8,padding:"7px 10px"}}>
               <div style={{width:10,height:10,borderRadius:"50%",flexShrink:0,border:"2px solid #FF453A"}}/>
-              <span style={{fontSize:12,color:"#E5E5EA",fontWeight:500,flex:1}}>{t.title}</span>
+              <span style={{fontSize:12,color:th.text2,fontWeight:800,flex:1,fontFamily:"'SIGNS',system-ui"}}>{t.title}</span>
             </div>)}
             {dn.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:8,
-              background:"#111",border:"1px solid #1A1A1A",borderRadius:8,padding:"7px 10px",opacity:.5}}>
+              background:th.card2,border:`1px solid ${th.border3}`,borderRadius:8,padding:"7px 10px",opacity:.5}}>
               <div style={{width:10,height:10,borderRadius:"50%",flexShrink:0,background:"#32D74B",
                 display:"flex",alignItems:"center",justifyContent:"center"}}>
                 <span style={{color:"#000",fontSize:7,fontWeight:900}}>✓</span>
               </div>
-              <span style={{fontSize:12,color:"#636366",textDecoration:"line-through",flex:1}}>{t.title}</span>
+              <span style={{fontSize:12,color:th.textMute,fontWeight:800,textDecoration:"line-through",flex:1,
+                fontFamily:"'SIGNS',system-ui"}}>{t.title}</span>
               {t.done_at&&<span style={{fontFamily:"monospace",fontSize:9,color:"#32D74B",flexShrink:0}}>{fmtTime(t.done_at)}</span>}
             </div>)}
           </div>
           {allDone&&<div style={{background:"rgba(50,215,75,.1)",border:"1px solid rgba(50,215,75,.3)",
-            borderRadius:8,padding:"6px",textAlign:"center",fontSize:12,color:"#32D74B",fontWeight:700,marginTop:8}}>✅ All done!</div>}
+            borderRadius:8,padding:"6px",textAlign:"center",marginTop:8}}>
+            <span className="font-signs" style={{fontSize:13,color:"#32D74B",fontWeight:800}}>✅ ALL DONE!</span>
+          </div>}
         </div>;
       })}
     </div>
   </div>;
 }
 
-function TVGroup({cat,tasks,members}){
+function TVGroup({cat,tasks,members,th}){
   return <div>
     <div style={{display:"inline-flex",alignItems:"center",gap:7,marginBottom:8,background:CAT[cat].bg,
       border:`1px solid ${CAT[cat].color}30`,borderRadius:9,padding:"5px 14px"}}>
       <span style={{fontSize:14}}>{CAT[cat].icon}</span>
-      <span style={{fontWeight:800,fontSize:11,color:CAT[cat].color,letterSpacing:".08em"}}>{cat.toUpperCase()}</span>
+      <span className="font-signs" style={{fontWeight:800,fontSize:11,color:CAT[cat].color,letterSpacing:".08em"}}>{cat.toUpperCase()}</span>
       <span style={{fontFamily:"monospace",fontSize:9,color:CAT[cat].color+"80"}}>({tasks.length})</span>
     </div>
     <div style={{display:"flex",flexDirection:"column",gap:4}}>
-      {tasks.map(t=><TVRow key={t.id} task={t} members={members}/>)}
+      {tasks.map(t=><TVRow key={t.id} task={t} members={members} th={th}/>)}
     </div>
   </div>;
 }
 
-function TVRow({task,members}){
+function TVRow({task,members,th}){
   const cfg=CAT[task.category];
-  return <div style={{background:task.done?"#0E0E0E":"#131313",border:`1px solid ${task.done?"#1A1A1A":cfg.color+"25"}`,
+  return <div style={{background:task.done?th.card4:th.card,border:`1px solid ${task.done?th.border3:cfg.color+"25"}`,
     borderLeft:`3px solid ${task.done?"#32D74B":cfg.color}`,borderRadius:8,padding:"8px 11px",
     display:"flex",alignItems:"center",gap:10,opacity:task.done?.5:1}}>
     <div style={{width:14,height:14,borderRadius:"50%",flexShrink:0,border:`2px solid ${task.done?"#32D74B":cfg.color}`,
-      background:task.done?"#32D74B15":"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      background:task.done?"rgba(50,215,75,.15)":"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
       {task.done&&<span style={{color:"#32D74B",fontSize:7,fontWeight:800}}>✓</span>}
     </div>
-    <div style={{flex:1,fontWeight:600,fontSize:12,color:task.done?"#3A3A3C":"#E5E5EA",
-      textDecoration:task.done?"line-through":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{task.title}</div>
+    <div style={{flex:1,fontWeight:800,fontSize:12,color:task.done?th.textGhost:th.text2,
+      textDecoration:task.done?"line-through":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
+      fontFamily:"'SIGNS',system-ui"}}>{task.title}</div>
     <div style={{display:"flex",alignItems:"center",gap:7,flexShrink:0}}>
-      <Avatar name={task.assignee} members={members} size={18}/>
-      <span style={{fontSize:10,color:"#636366",minWidth:50}}>{task.assignee}</span>
+      <Avatar name={task.assignee} members={members} size={18} th={th}/>
+      <span style={{fontSize:10,color:th.textMute,minWidth:50,fontFamily:"'SIGNS',system-ui"}}>{task.assignee}</span>
       {task.done&&task.done_at
         ?<span style={{fontFamily:"monospace",fontSize:8,color:"#32D74B",minWidth:70}}>{fmtTime(task.done_at)}</span>
         :<Badge category={task.category} due_date={task.due_date}/>}
@@ -381,62 +501,60 @@ function TVRow({task,members}){
 /* ═══════════════════════════════════════
    ADMIN
 ═══════════════════════════════════════ */
-function AdminLoginModal({onLogin,onClose,pwdHash}){
+function AdminLoginModal({onLogin,onClose,pwdHash,th}){
   const [pwd,setPwd]=useState(""), [err,setErr]=useState(false), [busy,setBusy]=useState(false);
   const attempt=async()=>{setBusy(true);const h=await sha256(pwd);if(h===pwdHash){onLogin();}else{setErr(true);setBusy(false);}};
-  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:300,
+  return <div style={{position:"fixed",inset:0,background:th.overlay,zIndex:300,
     display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}>
-    <div style={{background:"#141414",border:"1px solid #2C2C2E",borderRadius:20,padding:"32px 28px",
+    <div style={{background:th.surface2,border:`1px solid ${th.border}`,borderRadius:20,padding:"32px 28px",
       width:320,display:"flex",flexDirection:"column",gap:16}} onClick={e=>e.stopPropagation()}>
       <div style={{textAlign:"center"}}>
         <div style={{fontSize:32,marginBottom:8}}>🔐</div>
-        <div style={{fontWeight:800,fontSize:16,color:"#F2F2F7",marginBottom:4}}>Admin Access</div>
-        <div style={{fontSize:11,color:"#636366"}}>{ADMIN_EMAIL}</div>
+        <div className="font-signs" style={{fontWeight:900,fontSize:18,color:th.text,marginBottom:4}}>ADMIN ACCESS</div>
+        <div style={{fontSize:11,color:th.textMute}}>{ADMIN_EMAIL}</div>
       </div>
       <input type="password" value={pwd} onChange={e=>{setPwd(e.target.value);setErr(false);}}
         onKeyDown={e=>e.key==="Enter"&&attempt()} placeholder="Password" autoFocus
-        style={{background:"#1C1C1E",border:`1px solid ${err?"#FF453A":"#2C2C2E"}`,borderRadius:9,
-          color:"#F2F2F7",fontSize:14,padding:"11px 14px",width:"100%",outline:"none"}}/>
+        style={{background:th.input,border:`1px solid ${err?"#FF453A":th.border}`,borderRadius:9,
+          color:th.text,fontSize:14,padding:"11px 14px",width:"100%",outline:"none"}}/>
       {err&&<div style={{fontSize:11,color:"#FF453A"}}>⚠ Wrong password</div>}
       <div style={{display:"flex",gap:8}}>
-        <button onClick={onClose} style={{flex:1,padding:"11px",borderRadius:10,border:"1px solid #2C2C2E",
-          background:"transparent",color:"#8E8E93",fontWeight:700,fontSize:12,cursor:"pointer"}}>CANCEL</button>
+        <button onClick={onClose} style={{flex:1,padding:"11px",borderRadius:10,border:`1px solid ${th.border}`,
+          background:"transparent",color:th.textSub,fontWeight:700,fontSize:12,cursor:"pointer",
+          fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>CANCEL</button>
         <button onClick={attempt} disabled={busy||!pwd} style={{flex:2,padding:"11px",borderRadius:10,border:"none",
-          background:pwd?"linear-gradient(135deg,#5E5CE6,#BF5AF2)":"#1C1C1E",
-          color:pwd?"#fff":"#3A3A3C",fontWeight:700,fontSize:12,cursor:pwd?"pointer":"not-allowed"}}>
-          {busy?"Checking…":"ENTER"}</button>
+          background:pwd?"linear-gradient(135deg,#5E5CE6,#BF5AF2)":th.input,
+          color:pwd?"#fff":th.textGhost,fontWeight:700,fontSize:12,cursor:pwd?"pointer":"not-allowed",
+          fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>
+          {busy?"CHECKING…":"ENTER"}</button>
       </div>
     </div>
   </div>;
 }
 
-function AdminPanel({members,setMembers,tasks,setTasks,pwdHash,setPwdHash,onClose,setError}){
+function AdminPanel({members,setMembers,tasks,setTasks,pwdHash,setPwdHash,onClose,setError,th}){
   const [newMember,setNewMember]=useState("");
   const [tab,setTab]=useState("members");
   const [oldPwd,setOldPwd]=useState(""), [newPwd,setNewPwd]=useState(""), [confPwd,setConfPwd]=useState("");
   const [pwdMsg,setPwdMsg]=useState(null);
-  const [confirm,ConfirmModalEl]=useConfirm();
-  const inp={background:"#1C1C1E",border:"1px solid #2C2C2E",borderRadius:9,color:"#F2F2F7",fontSize:13,padding:"10px 12px",width:"100%",outline:"none"};
+  const [confirm,ConfirmModalEl]=useConfirm(th);
+  const inp={background:th.input,border:`1px solid ${th.border}`,borderRadius:9,color:th.text,fontSize:13,padding:"10px 12px",width:"100%",outline:"none"};
 
   const addMember=async()=>{
     const n=newMember.trim(); if(!n||members.includes(n)) return;
-    try {
-      await api.addMember(n);
-      setMembers(p=>[...p,n]); setNewMember("");
-    } catch(e){ setError("Failed to add member: "+e.message); }
+    try{ await api.addMember(n); setMembers(p=>[...p,n]); setNewMember(""); }
+    catch(e){ setError("Failed to add member: "+e.message); }
   };
-
   const removeMember=async name=>{
     const hasPending=tasks.some(t=>t.assignee===name&&!t.done);
     const msg=hasPending?`${name} has tasks in progress. Remove member AND all tasks?`:`Remove member "${name}"?`;
     const ok=await confirm(msg); if(!ok) return;
-    try {
+    try{
       await api.deleteMember(name);
       setMembers(p=>p.filter(m=>m!==name));
       setTasks(p=>p.filter(t=>t.assignee!==name));
-    } catch(e){ setError("Failed to remove member: "+e.message); }
+    }catch(e){ setError("Failed to remove member: "+e.message); }
   };
-
   const changePwd=async()=>{
     const h=await sha256(oldPwd); if(h!==pwdHash){setPwdMsg({ok:false,text:"Current password is wrong"});return;}
     if(newPwd.length<6){setPwdMsg({ok:false,text:"6+ characters required"});return;}
@@ -446,25 +564,28 @@ function AdminPanel({members,setMembers,tasks,setTasks,pwdHash,setPwdHash,onClos
   };
 
   return <>{ConfirmModalEl}
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:290,
+    <div style={{position:"fixed",inset:0,background:th.overlay,zIndex:290,
       display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={onClose}>
-      <div style={{background:"#0F0F0F",border:"1px solid #2C2C2E",borderRadius:"20px 20px 0 0",
+      <div style={{background:th.panel,border:`1px solid ${th.border}`,borderRadius:"20px 20px 0 0",
         padding:"0 0 40px",width:"100%",maxWidth:560,maxHeight:"85vh",display:"flex",flexDirection:"column"}}
         onClick={e=>e.stopPropagation()}>
         <div style={{padding:"18px 20px 0",display:"flex",alignItems:"center",gap:10}}>
           <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg,#FF9F0A,#FF453A)",
             display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🔐</div>
           <div style={{flex:1}}>
-            <div style={{fontWeight:800,fontSize:15,color:"#F2F2F7"}}>Admin Panel</div>
-            <div style={{fontSize:10,color:"#636366"}}>{ADMIN_EMAIL}</div>
+            <div className="font-signs" style={{fontWeight:900,fontSize:16,color:th.text}}>ADMIN PANEL</div>
+            <div style={{fontSize:10,color:th.textMute}}>{ADMIN_EMAIL}</div>
           </div>
-          <button onClick={onClose} style={{background:"#1C1C1E",border:"1px solid #2C2C2E",borderRadius:8,
-            color:"#8E8E93",fontSize:11,fontWeight:700,padding:"7px 14px",cursor:"pointer"}}>✕ CLOSE</button>
+          <button onClick={onClose} style={{background:th.input,border:`1px solid ${th.border}`,borderRadius:8,
+            color:th.textSub,fontSize:11,fontWeight:700,padding:"7px 14px",cursor:"pointer",
+            fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>✕ CLOSE</button>
         </div>
-        <div style={{display:"flex",borderBottom:"1px solid #1C1C1E",margin:"14px 0 0"}}>
+        <div style={{display:"flex",borderBottom:`1px solid ${th.border2}`,margin:"14px 0 0"}}>
           {["members","security"].map(k=><button key={k} onClick={()=>setTab(k)} style={{flex:1,padding:"10px 0",
             border:"none",cursor:"pointer",background:"transparent",fontWeight:800,fontSize:10,
-            color:tab===k?"#F2F2F7":"#3A3A3C",borderBottom:`2px solid ${tab===k?"#FF9F0A":"transparent"}`,transition:"all .2s"}}>
+            color:tab===k?th.text:th.textGhost,
+            borderBottom:`2px solid ${tab===k?"#FF9F0A":"transparent"}`,transition:"all .2s",
+            fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>
             {k==="members"?"👥 MEMBERS":"🔑 PASSWORD"}
           </button>)}
         </div>
@@ -474,33 +595,36 @@ function AdminPanel({members,setMembers,tasks,setTasks,pwdHash,setPwdHash,onClos
               <input value={newMember} onChange={e=>setNewMember(e.target.value)}
                 onKeyDown={e=>e.key==="Enter"&&addMember()} placeholder="New member…" style={{...inp,flex:1}}/>
               <button onClick={addMember} style={{background:"#5E5CE6",border:"none",borderRadius:9,
-                color:"#fff",fontWeight:700,fontSize:11,padding:"0 18px",cursor:"pointer",flexShrink:0}}>+ ADD</button>
+                color:"#fff",fontWeight:700,fontSize:11,padding:"0 18px",cursor:"pointer",flexShrink:0,
+                fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>+ ADD</button>
             </div>
             {members.map(m=>{const mt=tasks.filter(t=>t.assignee===m),md=mt.filter(t=>t.done);
-              return <div key={m} style={{background:"#161616",border:"1px solid #1C1C1E",borderRadius:12,
+              return <div key={m} style={{background:th.card2,border:`1px solid ${th.border2}`,borderRadius:12,
                 padding:"12px 14px",display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-                <Avatar name={m} members={members} size={36}/>
+                <Avatar name={m} members={members} size={36} th={th}/>
                 <div style={{flex:1}}>
-                  <div style={{fontWeight:700,fontSize:13,color:"#F2F2F7"}}>{m}</div>
-                  <div style={{fontSize:10,color:"#636366"}}>{md.length} done · {mt.filter(t=>!t.done).length} in progress</div>
+                  <div className="font-signs" style={{fontWeight:700,fontSize:13,color:th.text}}>{m}</div>
+                  <div style={{fontSize:10,color:th.textMute}}>{md.length} done · {mt.filter(t=>!t.done).length} in progress</div>
                 </div>
                 <button onClick={()=>removeMember(m)} style={{background:"rgba(255,69,58,.12)",
                   border:"1px solid rgba(255,69,58,.3)",borderRadius:8,color:"#FF453A",
-                  fontSize:10,fontWeight:700,padding:"5px 12px",cursor:"pointer"}}>REMOVE</button>
+                  fontSize:10,fontWeight:700,padding:"5px 12px",cursor:"pointer",
+                  fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>REMOVE</button>
               </div>;
             })}
           </>}
           {tab==="security"&&<div style={{display:"flex",flexDirection:"column",gap:12,maxWidth:380}}>
             {[{l:"CURRENT PASSWORD",v:oldPwd,s:setOldPwd},{l:"NEW PASSWORD",v:newPwd,s:setNewPwd},{l:"CONFIRM",v:confPwd,s:setConfPwd}].map(f=>
               <div key={f.l}>
-                <div style={{fontSize:10,color:"#636366",letterSpacing:".06em",fontWeight:700,marginBottom:5}}>{f.l}</div>
+                <div className="font-signs" style={{fontSize:10,color:th.textMute,letterSpacing:".06em",fontWeight:700,marginBottom:5}}>{f.l}</div>
                 <input type="password" value={f.v} onChange={e=>{f.s(e.target.value);setPwdMsg(null);}} style={inp}/>
               </div>
             )}
             {pwdMsg&&<div style={{fontSize:11,color:pwdMsg.ok?"#32D74B":"#FF453A",padding:"8px 12px",
               background:pwdMsg.ok?"rgba(50,215,75,.08)":"rgba(255,69,58,.08)",borderRadius:8}}>{pwdMsg.text}</div>}
             <button onClick={changePwd} style={{background:"linear-gradient(135deg,#FF9F0A,#FF453A)",border:"none",
-              borderRadius:10,color:"#fff",fontWeight:700,fontSize:12,padding:"12px",cursor:"pointer"}}>UPDATE PASSWORD</button>
+              borderRadius:10,color:"#fff",fontWeight:700,fontSize:12,padding:"12px",cursor:"pointer",
+              fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>UPDATE PASSWORD</button>
           </div>}
         </div>
       </div>
@@ -511,16 +635,16 @@ function AdminPanel({members,setMembers,tasks,setTasks,pwdHash,setPwdHash,onClos
 /* ═══════════════════════════════════════
    MANAGER VIEW
 ═══════════════════════════════════════ */
-const selS={background:"#111",border:"1px solid #2C2C2E",borderRadius:8,color:"#AEAEB2",fontSize:12,padding:"8px 10px",cursor:"pointer",flexShrink:0};
-const inpBase={background:"#1C1C1E",border:"1px solid #2C2C2E",borderRadius:9,color:"#F2F2F7",fontSize:13,padding:"10px 12px",width:"100%",outline:"none"};
+const selS=(th)=>({background:th.card2,border:`1px solid ${th.border}`,borderRadius:8,color:th.textSub,fontSize:12,padding:"8px 10px",cursor:"pointer",flexShrink:0});
+const inpBase=(th)=>({background:th.input,border:`1px solid ${th.border}`,borderRadius:9,color:th.text,fontSize:13,padding:"10px 12px",width:"100%",outline:"none"});
 
-function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setError,onSwitch}){
+function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setError,onSwitch,pushHistory,dark,onToggleTheme,th}){
   const [tab,setTab]=useState("tasks");
   const [mode,setMode]=useState("all");
   const [showForm,setShowForm]=useState(false), [editTask,setEditTask]=useState(null);
   const [fMember,setFMember]=useState("All"), [fCat,setFCat]=useState("All"), [fStatus,setFStatus]=useState("All");
   const [showLogin,setShowLogin]=useState(false), [showAdmin,setShowAdmin]=useState(false), [isAdmin,setIsAdmin]=useState(false);
-  const [confirm,ConfirmModalEl]=useConfirm();
+  const [confirm,ConfirmModalEl]=useConfirm(th);
   const [newHL,setNewHL]=useState(null);
 
   const filtered=sortTasks(tasks).filter(t=>
@@ -529,153 +653,174 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
 
   const toggleDone=useCallback(async task=>{
     const newDone=!task.done;
+    pushHistory(`${newDone?"Complete":"Uncomplete"} "${task.title}"`,{tasks:[...tasks]});
     const updated={...task,done:newDone,done_at:newDone?new Date().toISOString():null};
     setTasks(p=>p.map(t=>t.id===task.id?updated:t));
-    try { await api.updateTask(updated); }
+    try{ await api.updateTask(updated); }
     catch(e){ setTasks(p=>p.map(t=>t.id===task.id?task:t)); setError("Failed to update task"); }
-  },[tasks,setTasks,setError]);
+  },[tasks,setTasks,setError,pushHistory]);
 
   const deleteTask=useCallback(async id=>{
     const t=tasks.find(x=>x.id===id);
     const ok=await confirm(`Delete "${t?.title}"?`); if(!ok) return;
+    pushHistory(`Delete "${t?.title}"`,{tasks:[...tasks]});
     setTasks(p=>p.filter(t=>t.id!==id));
-    try { await api.deleteTask(id); }
+    try{ await api.deleteTask(id); }
     catch(e){ setTasks(p=>[...p,t]); setError("Failed to delete task"); }
-  },[tasks,confirm,setTasks,setError]);
+  },[tasks,confirm,setTasks,setError,pushHistory]);
 
   const saveTask=useCallback(async form=>{
     const escalated=escalate(form);
     if(form.id){
+      pushHistory(`Edit "${form.title}"`,{tasks:[...tasks]});
       setTasks(p=>p.map(t=>t.id===form.id?{...t,...escalated}:t));
-      try { await api.updateTask(escalated); }
+      try{ await api.updateTask(escalated); }
       catch(e){ setError("Failed to update task"); }
     } else {
-      try {
+      try{
         const created=await api.addTask(escalated);
+        pushHistory(`Add "${escalated.title}"`,{tasks:[...tasks]});
         setTasks(p=>[...p,created]);
         setNewHL(created.id); setTimeout(()=>setNewHL(null),2000);
-      } catch(e){ setError("Failed to add task: "+e.message); }
+      }catch(e){ setError("Failed to add task: "+e.message); }
     }
     setShowForm(false); setEditTask(null);
-  },[tasks,setTasks,setError]);
+  },[tasks,setTasks,setError,pushHistory]);
 
-  return <div style={{minHeight:"100vh",background:"#080808",maxWidth:640,margin:"0 auto",paddingBottom:100}}>
+  const ss=selS(th), ib=inpBase(th);
+
+  return <div style={{minHeight:"100vh",background:th.bg,maxWidth:640,margin:"0 auto",paddingBottom:100}}>
     {ConfirmModalEl}
-    <div style={{background:"#0D0D0D",borderBottom:"1px solid #1A1A1A",padding:"10px 14px",
+    {/* Header */}
+    <div className="mgr-header" style={{background:th.surface,borderBottom:`1px solid ${th.border2}`,padding:"10px 14px",
       display:"flex",alignItems:"center",gap:8,position:"sticky",top:0,zIndex:60}}>
-      <div style={{width:30,height:30,borderRadius:8,background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",
-        display:"flex",alignItems:"center",justifyContent:"center",fontSize:15}}>⚡</div>
-      <div style={{flex:1}}>
-        <div style={{fontWeight:800,fontSize:14,color:"#F2F2F7",lineHeight:1}}>Team Board</div>
-        <div style={{fontSize:8,color:"#48484A"}}>COLLABORATIVE</div>
+      <div style={{width:30,height:30,borderRadius:8,background:th.logoGrad,
+        display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>⚡</div>
+      <div className="mgr-title" style={{flex:1,minWidth:0}}>
+        <div className="font-signs" style={{fontWeight:900,fontSize:15,color:th.text,lineHeight:1}}>TEAM BOARD</div>
+        <div style={{fontSize:8,color:th.textFade,letterSpacing:".1em"}}>COLLABORATIVE</div>
       </div>
-      <div style={{display:"flex",background:"#141414",border:"1px solid #2C2C2E",borderRadius:9,padding:2,gap:1}}>
+      <div style={{display:"flex",background:th.surface2,border:`1px solid ${th.border}`,borderRadius:9,padding:2,gap:1}}>
         {[{id:"all",label:"📋 ALL"},{id:"daily",label:"🔥 DAILY"}].map(m=>(
           <button key={m.id} onClick={()=>{setMode(m.id);setTab("tasks");}} style={{
             padding:"5px 11px",borderRadius:7,border:"none",cursor:"pointer",fontWeight:800,fontSize:9,transition:"all .2s",
+            fontFamily:"'SIGNS',system-ui",letterSpacing:".06em",
             background:mode===m.id?(m.id==="daily"?"linear-gradient(135deg,#FF453A,#FF9F0A)":"linear-gradient(135deg,#5E5CE6,#BF5AF2)"):"transparent",
-            color:mode===m.id?"#fff":"#636366"}}>{m.label}</button>
+            color:mode===m.id?"#fff":th.textMute}}>{m.label}</button>
         ))}
       </div>
+      <ThemeSwitch dark={dark} onToggle={onToggleTheme}/>
       <button onClick={()=>isAdmin?setShowAdmin(true):setShowLogin(true)}
-        style={{background:isAdmin?"rgba(255,159,10,.12)":"#141414",border:`1px solid ${isAdmin?"#FF9F0A50":"#2C2C2E"}`,
-          borderRadius:8,color:isAdmin?"#FF9F0A":"#8E8E93",fontSize:9,fontWeight:700,padding:"6px 9px",cursor:"pointer"}}>
+        style={{background:isAdmin?"rgba(255,159,10,.12)":th.surface2,border:`1px solid ${isAdmin?"#FF9F0A50":th.border}`,
+          borderRadius:8,color:isAdmin?"#FF9F0A":th.textSub,fontSize:9,fontWeight:700,padding:"6px 9px",cursor:"pointer"}}>
         {isAdmin?"🔐":"🔒"}
       </button>
-      <button onClick={onSwitch} style={{background:"#141414",border:"1px solid #2C2C2E",borderRadius:8,
-        color:"#8E8E93",fontSize:9,fontWeight:700,padding:"6px 9px",cursor:"pointer"}}>📺</button>
+      <button onClick={onSwitch} style={{background:th.surface2,border:`1px solid ${th.border}`,borderRadius:8,
+        color:th.textSub,fontSize:9,fontWeight:700,padding:"6px 9px",cursor:"pointer"}}>📺</button>
     </div>
 
-    <div style={{display:"flex",background:"#0A0A0A",borderBottom:"1px solid #141414"}}>
+    {/* Tabs */}
+    <div style={{display:"flex",background:th.surface3,borderBottom:`1px solid ${th.border3}`}}>
       {["tasks","team"].map(k=><button key={k} onClick={()=>setTab(k)} style={{flex:1,padding:"10px 0",border:"none",
         cursor:"pointer",background:"transparent",fontWeight:800,fontSize:10,
-        color:tab===k?"#F2F2F7":"#3A3A3C",borderBottom:`2px solid ${tab===k?"#5E5CE6":"transparent"}`,transition:"all .2s"}}>
+        color:tab===k?th.text:th.textGhost,
+        borderBottom:`2px solid ${tab===k?"#5E5CE6":"transparent"}`,transition:"all .2s",
+        fontFamily:"'SIGNS',system-ui",letterSpacing:".08em"}}>
         {k==="tasks"?"TASKS":"TEAM"}
       </button>)}
     </div>
 
+    {/* Daily mode */}
     {mode==="daily"&&tab==="tasks"&&<div style={{padding:"14px"}}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
+      <div className="daily-mgr-grid">
         {members.map(m=>{
           const all=tasks.filter(t=>t.assignee===m&&t.category==="Daily");
           if(!all.length) return null;
           const pend=all.filter(t=>!t.done),dn=all.filter(t=>t.done);
           const pct=Math.round(dn.length/all.length*100),c=mColor(m,members),allDone=pct===100;
-          return <div key={m} style={{background:allDone?"rgba(50,215,75,.06)":"#111",
+          return <div key={m} style={{background:allDone?"rgba(50,215,75,.06)":th.card,
             border:`1px solid ${allDone?"rgba(50,215,75,.3)":c+"30"}`,
             borderTop:`3px solid ${allDone?"#32D74B":c}`,borderRadius:14,padding:"13px 13px 11px"}}>
             <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:7}}>
               <div style={{width:38,height:38,borderRadius:"50%",background:c,flexShrink:0,
                 display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:16,
-                boxShadow:`0 0 0 2px #0D0D0D,0 0 0 3.5px ${c}50`}}>{m[0].toUpperCase()}</div>
+                boxShadow:`0 0 0 2px ${th.bg},0 0 0 3.5px ${c}50`}}>{m[0].toUpperCase()}</div>
               <div style={{flex:1}}>
-                <div style={{fontWeight:800,fontSize:13,color:"#F2F2F7",lineHeight:1,marginBottom:2}}>{m}</div>
-                <div style={{fontSize:10,color:"#636366"}}>{dn.length}/{all.length} done</div>
+                <div className="font-signs" style={{fontWeight:900,fontSize:14,color:th.text,lineHeight:1,marginBottom:2}}>{m.toUpperCase()}</div>
+                <div style={{fontSize:10,color:th.textMute}}>{dn.length}/{all.length} done</div>
               </div>
-              <div style={{fontWeight:800,fontSize:16,color:allDone?"#32D74B":pct>50?"#FF9F0A":c}}>{pct}%</div>
+              <div className="font-signs" style={{fontWeight:900,fontSize:17,color:allDone?"#32D74B":pct>50?"#FF9F0A":c}}>{pct}%</div>
             </div>
-            <div style={{height:3,background:"#1C1C1E",borderRadius:3,overflow:"hidden",marginBottom:7}}>
+            <div style={{height:3,background:th.border,borderRadius:3,overflow:"hidden",marginBottom:7}}>
               <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:4}}>
               {pend.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:7,
-                background:"#1A1A1A",border:"1px solid #2C2C2E",borderRadius:7,padding:"6px 9px"}}>
+                background:th.card2,border:`1px solid ${th.border}`,borderRadius:7,padding:"6px 9px"}}>
                 <div style={{width:9,height:9,borderRadius:"50%",flexShrink:0,border:"2px solid #FF453A"}}/>
-                <span style={{fontSize:11,color:"#E5E5EA",flex:1}}>{t.title}</span>
-                <button onClick={()=>toggleDone(t)} style={{background:"#2C2C2E",border:"none",borderRadius:6,
-                  color:"#8E8E93",fontSize:9,fontWeight:700,padding:"3px 8px",cursor:"pointer",flexShrink:0}}>✓</button>
+                <span style={{fontSize:11,color:th.text2,flex:1,fontFamily:"'SIGNS',system-ui",fontWeight:700}}>{t.title}</span>
+                <button onClick={()=>toggleDone(t)} style={{background:th.border,border:"none",borderRadius:6,
+                  color:th.textSub,fontSize:9,fontWeight:700,padding:"3px 8px",cursor:"pointer",flexShrink:0,
+                  fontFamily:"'SIGNS',system-ui"}}>✓</button>
               </div>)}
               {dn.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:7,
-                background:"#111",border:"1px solid #1A1A1A",borderRadius:7,padding:"6px 9px",opacity:.5}}>
+                background:th.card2,border:`1px solid ${th.border3}`,borderRadius:7,padding:"6px 9px",opacity:.5}}>
                 <div style={{width:9,height:9,borderRadius:"50%",flexShrink:0,background:"#32D74B"}}/>
-                <span style={{fontSize:11,color:"#636366",textDecoration:"line-through",flex:1}}>{t.title}</span>
+                <span style={{fontSize:11,color:th.textMute,textDecoration:"line-through",flex:1,
+                  fontFamily:"'SIGNS',system-ui",fontWeight:700}}>{t.title}</span>
                 {t.done_at&&<span style={{fontFamily:"monospace",fontSize:8,color:"#32D74B"}}>{fmtTime(t.done_at)}</span>}
               </div>)}
             </div>
             {allDone&&<div style={{background:"rgba(50,215,75,.1)",border:"1px solid rgba(50,215,75,.3)",
-              borderRadius:7,padding:"5px",textAlign:"center",fontSize:11,color:"#32D74B",fontWeight:700,marginTop:7}}>✅ All done!</div>}
+              borderRadius:7,padding:"5px",textAlign:"center",marginTop:7}}>
+              <span className="font-signs" style={{fontSize:12,color:"#32D74B",fontWeight:800}}>✅ ALL DONE!</span>
+            </div>}
           </div>;
         })}
       </div>
     </div>}
 
+    {/* All tasks */}
     {mode==="all"&&tab==="tasks"&&<div style={{padding:"14px"}}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:12}}>
+      <div className="cat-grid">
         {CATEGORIES.map(cat=>{const n=tasks.filter(t=>!t.done&&t.category===cat).length;
-          return <div key={cat} style={{background:"#111",border:`1px solid ${CAT[cat].color}20`,borderRadius:10,
+          return <div key={cat} style={{background:th.card,border:`1px solid ${CAT[cat].color}25`,borderRadius:10,
             padding:"9px 6px",textAlign:"center",cursor:"pointer"}} onClick={()=>{setFCat(cat);setFStatus("In Progress");}}>
             <div style={{fontSize:15,marginBottom:2}}>{CAT[cat].icon}</div>
-            <div style={{fontWeight:800,fontSize:18,color:CAT[cat].color,lineHeight:1}}>{n}</div>
-            <div style={{fontSize:8,color:"#48484A",marginTop:1}}>{cat.toUpperCase()}</div>
+            <div className="font-signs" style={{fontWeight:900,fontSize:20,color:CAT[cat].color,lineHeight:1}}>{n}</div>
+            <div className="font-signs" style={{fontSize:8,color:th.textFade,marginTop:1}}>{cat.toUpperCase()}</div>
           </div>;
         })}
       </div>
       <div style={{display:"flex",gap:7,marginBottom:12,alignItems:"center",flexWrap:"wrap"}}>
-        <select value={fMember} onChange={e=>setFMember(e.target.value)} style={selS}>
+        <select value={fMember} onChange={e=>setFMember(e.target.value)} style={ss}>
           <option>All</option>{members.map(m=><option key={m}>{m}</option>)}
         </select>
-        <select value={fCat} onChange={e=>setFCat(e.target.value)} style={selS}>
+        <select value={fCat} onChange={e=>setFCat(e.target.value)} style={ss}>
           <option>All</option>{CATEGORIES.map(c=><option key={c}>{c}</option>)}
         </select>
-        <select value={fStatus} onChange={e=>setFStatus(e.target.value)} style={selS}>
+        <select value={fStatus} onChange={e=>setFStatus(e.target.value)} style={ss}>
           <option>All</option><option>In Progress</option><option>Done</option>
         </select>
         {(fMember!=="All"||fCat!=="All"||fStatus!=="All")&&
-          <button onClick={()=>{setFMember("All");setFCat("All");setFStatus("All");}} style={{background:"#2C2C2E",
-            border:"none",borderRadius:8,color:"#8E8E93",fontSize:10,fontWeight:700,padding:"7px 10px",cursor:"pointer"}}>✕ Clear</button>}
+          <button onClick={()=>{setFMember("All");setFCat("All");setFStatus("All");}} style={{background:th.border,
+            border:"none",borderRadius:8,color:th.textSub,fontSize:10,fontWeight:700,padding:"7px 10px",cursor:"pointer",
+            fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>✕ CLEAR</button>}
         <div style={{flex:1}}/>
         <button onClick={()=>{setEditTask(null);setShowForm(true);}} style={{background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",
           border:"none",borderRadius:9,color:"#fff",fontWeight:700,fontSize:11,padding:"9px 14px",cursor:"pointer",
-          boxShadow:"0 4px 18px rgba(94,92,230,.4)"}}>+ ADD</button>
+          boxShadow:"0 4px 18px rgba(94,92,230,.3)",fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>+ ADD</button>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:7}}>
-        {filtered.length===0&&<div style={{textAlign:"center",padding:"48px 0",color:"#2C2C2E",fontSize:13,fontWeight:700}}>No tasks</div>}
+        {filtered.length===0&&<div style={{textAlign:"center",padding:"48px 0",color:th.textGhost,fontSize:13,fontWeight:700,
+          fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>NO TASKS</div>}
         {filtered.map(task=><ManagerCard key={task.id} task={task} members={members}
           onToggle={toggleDone} onEdit={t=>{setEditTask(t);setShowForm(true);}}
-          onDelete={deleteTask} highlight={task.id===newHL}/>)}
+          onDelete={deleteTask} highlight={task.id===newHL} th={th}/>)}
       </div>
     </div>}
 
+    {/* Team tab */}
     {tab==="team"&&<div style={{padding:"14px"}}>
       {!isAdmin&&<div style={{background:"rgba(255,159,10,.08)",border:"1px solid rgba(255,159,10,.25)",
         borderRadius:10,padding:"11px 14px",marginBottom:14,fontSize:12,color:"#FF9F0A",display:"flex",gap:8}}>
@@ -686,25 +831,26 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
         const mt=tasks.filter(t=>t.assignee===m),md=mt.filter(t=>t.done);
         const p2=mt.length?Math.round(md.length/mt.length*100):0,c=mColor(m,members);
         const open=mt.filter(t=>!t.done),overdue=open.filter(t=>t.due_date&&new Date(t.due_date)<today());
-        return <div key={m} style={{background:"#111",border:`1px solid ${overdue.length?"#FF453A30":"#1C1C1E"}`,
+        return <div key={m} style={{background:th.card,border:`1px solid ${overdue.length?"#FF453A30":th.border2}`,
           borderRadius:12,padding:"13px 14px",marginBottom:9}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-            <Avatar name={m} members={members} size={38}/>
+            <Avatar name={m} members={members} size={38} th={th}/>
             <div style={{flex:1}}>
-              <div style={{fontWeight:700,fontSize:14,color:"#F2F2F7",lineHeight:1,marginBottom:3}}>{m}</div>
-              <div style={{fontSize:11,color:"#636366",display:"flex",gap:8}}>
+              <div className="font-signs" style={{fontWeight:900,fontSize:15,color:th.text,lineHeight:1,marginBottom:3}}>{m.toUpperCase()}</div>
+              <div style={{fontSize:11,color:th.textMute,display:"flex",gap:8}}>
                 {md.length}/{mt.length} done
                 {overdue.length>0&&<span style={{color:"#FF453A",fontWeight:700,fontSize:10}}>⚠ {overdue.length} overdue</span>}
               </div>
             </div>
-            <div style={{fontWeight:800,fontSize:18,color:p2===100?"#32D74B":c}}>{p2}%</div>
+            <div className="font-signs" style={{fontWeight:900,fontSize:19,color:p2===100?"#32D74B":c}}>{p2}%</div>
           </div>
-          <div style={{height:3,background:"#1C1C1E",borderRadius:3,overflow:"hidden",marginBottom:open.length?8:0}}>
+          <div style={{height:3,background:th.border2,borderRadius:3,overflow:"hidden",marginBottom:open.length?8:0}}>
             <div style={{height:"100%",width:`${p2}%`,background:p2===100?"#32D74B":c,borderRadius:3}}/>
           </div>
           {open.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:5}}>
             {open.map(t=><span key={t.id} style={{fontSize:10,background:CAT[t.category].bg,color:CAT[t.category].color,
-              border:`1px solid ${CAT[t.category].color}30`,padding:"3px 9px",borderRadius:20}}>
+              border:`1px solid ${CAT[t.category].color}30`,padding:"3px 9px",borderRadius:20,
+              fontFamily:"'SIGNS',system-ui",fontWeight:700}}>
               {CAT[t.category].icon} {t.title}
               {t.due_date&&<span style={{opacity:.6}}> · {fmtDue(t.due_date).text}</span>}
             </span>)}
@@ -713,16 +859,16 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
       })}
     </div>}
 
-    {showForm&&<TaskForm task={editTask} members={members} onSave={saveTask} onClose={()=>{setShowForm(false);setEditTask(null);}}/>}
-    {showLogin&&<AdminLoginModal pwdHash={pwdHash} onLogin={()=>{setIsAdmin(true);setShowLogin(false);setShowAdmin(true);}} onClose={()=>setShowLogin(false)}/>}
+    {showForm&&<TaskForm task={editTask} members={members} onSave={saveTask} onClose={()=>{setShowForm(false);setEditTask(null);}} th={th}/>}
+    {showLogin&&<AdminLoginModal pwdHash={pwdHash} th={th} onLogin={()=>{setIsAdmin(true);setShowLogin(false);setShowAdmin(true);}} onClose={()=>setShowLogin(false)}/>}
     {showAdmin&&<AdminPanel members={members} setMembers={setMembers} tasks={tasks} setTasks={setTasks}
-      pwdHash={pwdHash} setPwdHash={setPwdHash} setError={setError} onClose={()=>setShowAdmin(false)}/>}
+      pwdHash={pwdHash} setPwdHash={setPwdHash} setError={setError} th={th} onClose={()=>setShowAdmin(false)}/>}
   </div>;
 }
 
-function ManagerCard({task,members,onToggle,onEdit,onDelete,highlight}){
+function ManagerCard({task,members,onToggle,onEdit,onDelete,highlight,th}){
   const cfg=CAT[task.category];
-  return <div style={{background:task.done?"#0E0E0E":"#131313",border:`1px solid ${task.done?"#1A1A1A":cfg.color+"25"}`,
+  return <div style={{background:task.done?th.card4:th.card,border:`1px solid ${task.done?th.border3:cfg.color+"25"}`,
     borderLeft:`3px solid ${task.done?"#32D74B":cfg.color}`,borderRadius:10,padding:"11px 12px",
     display:"flex",alignItems:"flex-start",gap:10,opacity:task.done?.58:1,
     animation:highlight?"newTask .6s ease 3":undefined}}>
@@ -732,56 +878,61 @@ function ManagerCard({task,members,onToggle,onEdit,onDelete,highlight}){
       {task.done&&<span style={{color:"#fff",fontSize:9,fontWeight:800}}>✓</span>}
     </button>
     <div style={{flex:1,minWidth:0}}>
-      <div style={{fontWeight:600,fontSize:13,color:task.done?"#3A3A3C":"#E5E5EA",
-        textDecoration:task.done?"line-through":"none",marginBottom:5,lineHeight:1.3}}>{task.title}</div>
+      <div style={{fontWeight:700,fontSize:13,color:task.done?th.textGhost:th.text2,
+        textDecoration:task.done?"line-through":"none",marginBottom:5,lineHeight:1.3,
+        fontFamily:"'SIGNS',system-ui"}}>{task.title}</div>
       <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-        <Avatar name={task.assignee} members={members} size={16} ring={false}/>
-        <span style={{fontSize:11,color:"#8E8E93"}}>{task.assignee}</span>
+        <Avatar name={task.assignee} members={members} size={16} ring={false} th={th}/>
+        <span style={{fontSize:11,color:th.textSub,fontFamily:"'SIGNS',system-ui"}}>{task.assignee}</span>
         <Badge category={task.category} due_date={task.due_date}/>
         {task.done&&task.done_at&&<span style={{fontSize:9,color:"#32D74B",fontFamily:"monospace"}}>✓ {fmtFull(task.done_at)}</span>}
       </div>
     </div>
     <div style={{display:"flex",gap:1,flexShrink:0}}>
-      <button onClick={()=>onEdit(task)} style={{background:"transparent",border:"none",cursor:"pointer",color:"#3A3A3C",fontSize:14,padding:"3px 5px"}}
-        onMouseEnter={e=>e.currentTarget.style.color="#8E8E93"} onMouseLeave={e=>e.currentTarget.style.color="#3A3A3C"}>✏️</button>
-      <button onClick={()=>onDelete(task.id)} style={{background:"transparent",border:"none",cursor:"pointer",color:"#3A3A3C",fontSize:14,padding:"3px 5px"}}
-        onMouseEnter={e=>e.currentTarget.style.color="#FF453A"} onMouseLeave={e=>e.currentTarget.style.color="#3A3A3C"}>🗑️</button>
+      <button onClick={()=>onEdit(task)} style={{background:"transparent",border:"none",cursor:"pointer",color:th.textGhost,fontSize:14,padding:"3px 5px"}}
+        onMouseEnter={e=>e.currentTarget.style.color=th.textSub} onMouseLeave={e=>e.currentTarget.style.color=th.textGhost}>✏️</button>
+      <button onClick={()=>onDelete(task.id)} style={{background:"transparent",border:"none",cursor:"pointer",color:th.textGhost,fontSize:14,padding:"3px 5px"}}
+        onMouseEnter={e=>e.currentTarget.style.color="#FF453A"} onMouseLeave={e=>e.currentTarget.style.color=th.textGhost}>🗑️</button>
     </div>
   </div>;
 }
 
-function TaskForm({task,members,onSave,onClose}){
+function TaskForm({task,members,onSave,onClose,th}){
+  const ib=inpBase(th);
   const [form,setForm]=useState({title:task?.title||"",assignee:task?.assignee||members[0]||"",
     category:task?.category||"Daily",original_category:task?.original_category||"Daily",
     due_date:NEEDS_DUE.includes(task?.category)?task?.due_date||"":"",id:task?.id||null});
   const set=(k,v)=>setForm(f=>{const n={...f,[k]:v};if(k==="category"){n.original_category=v;if(!NEEDS_DUE.includes(v))n.due_date="";}return n;});
   const hasDue=NEEDS_DUE.includes(form.category),dueErr=hasDue&&!form.due_date,valid=form.title.trim()&&form.assignee&&!dueErr;
-  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.9)",zIndex:200,
+  return <div style={{position:"fixed",inset:0,background:th.overlay,zIndex:200,
     display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={onClose}>
-    <div style={{background:"#141414",border:"1px solid #2C2C2E",borderRadius:"20px 20px 0 0",
+    <div style={{background:th.surface2,border:`1px solid ${th.border}`,borderRadius:"20px 20px 0 0",
       padding:"22px 20px 40px",width:"100%",maxWidth:520}} onClick={e=>e.stopPropagation()}>
-      <div style={{width:36,height:4,background:"#2C2C2E",borderRadius:2,margin:"0 auto 18px"}}/>
-      <div style={{fontWeight:800,fontSize:15,color:"#F2F2F7",marginBottom:18}}>{task?"Edit task":"New task"}</div>
+      <div style={{width:36,height:4,background:th.border,borderRadius:2,margin:"0 auto 18px"}}/>
+      <div className="font-signs" style={{fontWeight:900,fontSize:16,color:th.text,marginBottom:18}}>
+        {task?"EDIT TASK":"NEW TASK"}
+      </div>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div>
-          <div style={{fontSize:10,color:"#636366",fontWeight:700,marginBottom:5}}>TITLE</div>
-          <input value={form.title} onChange={e=>set("title",e.target.value)} placeholder="Describe the task…" style={inpBase} autoFocus/>
+          <div className="font-signs" style={{fontSize:10,color:th.textMute,fontWeight:700,marginBottom:5,letterSpacing:".06em"}}>TITLE</div>
+          <input value={form.title} onChange={e=>set("title",e.target.value)} placeholder="Describe the task…" style={ib} autoFocus/>
         </div>
         <div>
-          <div style={{fontSize:10,color:"#636366",fontWeight:700,marginBottom:5}}>ASSIGNED TO</div>
-          <select value={form.assignee} onChange={e=>set("assignee",e.target.value)} style={inpBase}>
+          <div className="font-signs" style={{fontSize:10,color:th.textMute,fontWeight:700,marginBottom:5,letterSpacing:".06em"}}>ASSIGNED TO</div>
+          <select value={form.assignee} onChange={e=>set("assignee",e.target.value)} style={ib}>
             {members.map(m=><option key={m}>{m}</option>)}
           </select>
         </div>
         <div>
-          <div style={{fontSize:10,color:"#636366",fontWeight:700,marginBottom:8}}>CATEGORY</div>
+          <div className="font-signs" style={{fontSize:10,color:th.textMute,fontWeight:700,marginBottom:8,letterSpacing:".06em"}}>CATEGORY</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
             {CATEGORIES.map(cat=><button key={cat} onClick={()=>set("category",cat)} style={{
               padding:"10px 4px",borderRadius:10,cursor:"pointer",
-              background:form.category===cat?CAT[cat].bg:"#1C1C1E",
-              border:`2px solid ${form.category===cat?CAT[cat].color:"#2C2C2E"}`,
-              color:form.category===cat?CAT[cat].color:"#48484A",fontWeight:700,fontSize:9,transition:"all .15s",
-              display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+              background:form.category===cat?CAT[cat].bg:th.input,
+              border:`2px solid ${form.category===cat?CAT[cat].color:th.border}`,
+              color:form.category===cat?CAT[cat].color:th.textFade,fontWeight:700,fontSize:9,transition:"all .15s",
+              display:"flex",flexDirection:"column",alignItems:"center",gap:3,
+              fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>
               <span style={{fontSize:18}}>{CAT[cat].icon}</span>
               <span>{cat.toUpperCase()}</span>
               <span style={{fontSize:7,opacity:.6,fontWeight:400}}>{CAT[cat].hint}</span>
@@ -790,11 +941,11 @@ function TaskForm({task,members,onSave,onClose}){
         </div>
         {hasDue&&<div>
           <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
-            <div style={{fontSize:10,color:"#636366",fontWeight:700}}>DUE DATE</div>
+            <div className="font-signs" style={{fontSize:10,color:th.textMute,fontWeight:700,letterSpacing:".06em"}}>DUE DATE</div>
             <span style={{fontSize:9,color:"#FF453A",fontWeight:700}}>* required</span>
           </div>
           <input type="date" value={form.due_date} min={todayStr()} onChange={e=>set("due_date",e.target.value)}
-            style={{...inpBase,border:`1px solid ${dueErr?"#FF453A":"#2C2C2E"}`,colorScheme:"dark"}}/>
+            style={{...ib,border:`1px solid ${dueErr?"#FF453A":th.border}`,colorScheme:th.name==="dark"?"dark":"light"}}/>
           {form.due_date&&(()=>{const d=new Date(form.due_date);d.setHours(0,0,0,0);
             const diff=Math.round((d-today())/86400000),{text,color}=fmtDue(form.due_date);
             return <div style={{marginTop:6,fontSize:11,color,display:"flex",gap:6}}>
@@ -805,13 +956,15 @@ function TaskForm({task,members,onSave,onClose}){
           {dueErr&&<div style={{marginTop:5,fontSize:10,color:"#FF453A"}}>⚠ Please pick a due date</div>}
         </div>}
         <div style={{display:"flex",gap:9,marginTop:4}}>
-          <button onClick={onClose} style={{flex:1,padding:"12px",borderRadius:10,border:"1px solid #2C2C2E",
-            background:"transparent",color:"#8E8E93",fontWeight:700,fontSize:12,cursor:"pointer"}}>CANCEL</button>
+          <button onClick={onClose} style={{flex:1,padding:"12px",borderRadius:10,border:`1px solid ${th.border}`,
+            background:"transparent",color:th.textSub,fontWeight:700,fontSize:12,cursor:"pointer",
+            fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>CANCEL</button>
           <button onClick={()=>valid&&onSave(form)} style={{flex:2,padding:"12px",borderRadius:10,border:"none",
-            background:valid?"linear-gradient(135deg,#5E5CE6,#BF5AF2)":"#1C1C1E",
-            color:valid?"#fff":"#3A3A3C",fontWeight:700,fontSize:12,cursor:valid?"pointer":"not-allowed",
-            boxShadow:valid?"0 4px 18px rgba(94,92,230,.35)":"none"}}>
-            {task?"SAVE":"CREATE TASK"}
+            background:valid?"linear-gradient(135deg,#5E5CE6,#BF5AF2)":th.input,
+            color:valid?"#fff":th.textGhost,fontWeight:700,fontSize:12,cursor:valid?"pointer":"not-allowed",
+            boxShadow:valid?"0 4px 18px rgba(94,92,230,.35)":"none",
+            fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>
+            {task?"SAVE CHANGES":"CREATE TASK"}
           </button>
         </div>
       </div>
@@ -820,24 +973,32 @@ function TaskForm({task,members,onSave,onClose}){
 }
 
 /* ═══════════════════════════════════════
-   ROOT — avec polling Neon
+   ROOT
 ═══════════════════════════════════════ */
 function App(){
-  const [view,setView]     = useState("tv");
-  const [tasks,setTasks]   = useState([]);
+  const [view,setView]      = useState(()=>window.innerWidth<768?"manager":"tv");
+  const [tasks,setTasks]    = useState([]);
   const [members,setMembers]= useState([]);
   const [pwdHash,setPwdHash]= useState(null);
   const [loading,setLoading]= useState(true);
-  const [error,setError]   = useState(null);
-  const [toasts,setToasts] = useState([]);
+  const [error,setError]    = useState(null);
+  const [toasts,setToasts]  = useState([]);
   const [history,setHistory]= useState([]);
-  const prevDone           = useRef(new Set());
-  const isTV               = useRef(false);
+  const [dark,setDark]      = useState(()=>localStorage.getItem("theme")!=="light");
+  const prevDone            = useRef(new Set());
 
-  // Hash initial password
+  const th = dark ? DARK : LIGHT;
+
+  const toggleTheme = useCallback(()=>{
+    setDark(d=>{ const next=!d; localStorage.setItem("theme",next?"dark":"light"); return next; });
+  },[]);
+
+  const pushHistory = useCallback((label, snap) => {
+    setHistory(h => [...h.slice(-(MAX_HISTORY-1)), {label, ...snap}]);
+  }, []);
+
   useEffect(()=>{ sha256("rodeokid").then(setPwdHash); },[]);
 
-  // Chargement initial
   useEffect(()=>{
     Promise.all([api.getTasks(), api.getMembers()])
       .then(([t,m])=>{
@@ -850,13 +1011,11 @@ function App(){
       .catch(e=>{ setError("Failed to load data: "+e.message); setLoading(false); });
   },[]);
 
-  // Polling toutes les 5s pour la TV
   useEffect(()=>{
     const poll=async()=>{
-      try {
+      try{
         const [t,m]=await Promise.all([api.getTasks(), api.getMembers()]);
         const escalated=t.map(escalate);
-        // Toasts pour nouvelles tâches cochées
         escalated.forEach(task=>{
           if(task.done && !prevDone.current.has(task.id)){
             const toast={...task,toastId:Date.now()+Math.random()};
@@ -866,30 +1025,31 @@ function App(){
           }
           if(!task.done) prevDone.current.delete(task.id);
         });
-        setTasks(escalated);
-        setMembers(m);
-      } catch(e){ /* silently ignore polling errors */ }
+        setTasks(escalated); setMembers(m);
+      }catch(e){}
     };
     const i=setInterval(poll, POLL_MS);
     return()=>clearInterval(i);
   },[]);
 
-  // Auto-escalation toutes les minutes
   useEffect(()=>{
     const i=setInterval(()=>setTasks(p=>p.map(escalate)),60000);
     return()=>clearInterval(i);
   },[]);
 
-  if(!pwdHash||loading) return <div style={{width:"100vw",height:"100vh",background:"#080808",
+  // Apply bg color to body
+  useEffect(()=>{ document.body.style.background=th.bg; },[th]);
+
+  if(!pwdHash||loading) return <div style={{width:"100vw",height:"100vh",background:th.bg,
     display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
-    <div style={{width:42,height:42,borderRadius:11,background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",
+    <div style={{width:42,height:42,borderRadius:11,background:th.logoGrad,
       display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>⚡</div>
-    <div style={{color:"#3A3A3C",fontSize:13,fontFamily:"system-ui,sans-serif"}}>Loading Team Board…</div>
+    <div className="font-signs" style={{color:th.textGhost,fontSize:14,letterSpacing:".1em"}}>LOADING TEAM BOARD…</div>
   </div>;
 
-  return <div style={{fontFamily:"system-ui,sans-serif"}}>
-    <Toast toasts={toasts}/>
-    <UndoBar history={history} onUndo={()=>{
+  return <div style={{fontFamily:"'SIGNS',system-ui,sans-serif"}}>
+    <Toast toasts={toasts} th={th}/>
+    <UndoBar history={history} th={th} onUndo={()=>{
       setHistory(h=>{if(!h.length)return h;
         const last=h[h.length-1];
         if(last.tasks)setTasks(last.tasks);
@@ -898,10 +1058,11 @@ function App(){
     }}/>
     <ErrorBanner msg={error} onClose={()=>setError(null)}/>
     {view==="tv"
-      ?<TVView tasks={tasks} members={members} onSwitch={()=>setView("manager")}/>
+      ?<TVView tasks={tasks} members={members} dark={dark} onToggleTheme={toggleTheme} th={th}
+          onSwitch={()=>setView("manager")}/>
       :<ManagerView tasks={tasks} setTasks={setTasks} members={members} setMembers={setMembers}
-          pwdHash={pwdHash} setPwdHash={setPwdHash}
-          setError={setError}
+          pwdHash={pwdHash} setPwdHash={setPwdHash} setError={setError}
+          pushHistory={pushHistory} dark={dark} onToggleTheme={toggleTheme} th={th}
           onSwitch={()=>setView("tv")}/>}
   </div>;
 }
