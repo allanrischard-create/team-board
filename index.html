@@ -433,7 +433,8 @@ function TVDailyMode({tasks,members,th,onToggle,onDelete}){
               <div style={{width:10,height:10,borderRadius:"50%",flexShrink:0,border:"2px solid #FF453A"}}/>
               <span style={{fontSize:12,color:th.text2,fontWeight:800,flex:1,fontFamily:"'SIGNS',system-ui"}}>{t.title}</span>
             </div>)}
-            {dn.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:8,
+            {dn.map(t=><div key={t.id} onClick={()=>onToggle&&onToggle(t)}
+              style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",
               background:th.card2,border:`1px solid ${th.border3}`,borderRadius:8,padding:"7px 10px",opacity:.5}}>
               <div style={{width:10,height:10,borderRadius:"50%",flexShrink:0,background:"#32D74B",
                 display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -494,7 +495,8 @@ function TVTeamMode({tasks,members,th,onToggle,onDelete}){
                 whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.title}</span>
               <span style={{fontSize:8,color:cfg.color,fontFamily:"'SIGNS',system-ui",fontWeight:700,flexShrink:0}}>{t.category.slice(0,1)}</span>
             </div>;})}
-            {dn.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:8,
+            {dn.map(t=><div key={t.id} onClick={()=>onToggle&&onToggle(t)}
+              style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",
               background:th.card2,border:`1px solid ${th.border3}`,borderRadius:8,padding:"6px 10px",opacity:.45}}>
               <div style={{width:9,height:9,borderRadius:"50%",flexShrink:0,background:"#32D74B"}}/>
               <span style={{fontSize:11,color:th.textMute,fontWeight:700,textDecoration:"line-through",flex:1,
@@ -533,8 +535,8 @@ function TVRow({task,members,th,onToggle,onDelete}){
   return <div style={{background:task.done?th.card4:th.card,border:`1px solid ${task.done?th.border3:cfg.color+"25"}`,
     borderLeft:`3px solid ${task.done?"#32D74B":cfg.color}`,borderRadius:8,padding:"8px 11px",
     display:"flex",alignItems:"center",gap:10,opacity:task.done?.5:1,
-    cursor:onToggle&&!task.done?"pointer":"default",transition:"opacity .15s"}}
-    onClick={()=>{ if(onToggle&&!task.done) onToggle(task); }}>
+    cursor:onToggle?"pointer":"default",transition:"opacity .15s"}}
+    onClick={()=>{ if(onToggle) onToggle(task); }}>
     <div onClick={e=>{e.stopPropagation();if(onToggle)onToggle(task);}}
       style={{width:14,height:14,borderRadius:"50%",flexShrink:0,border:`2px solid ${task.done?"#32D74B":cfg.color}`,
       background:task.done?"rgba(50,215,75,.15)":"transparent",display:"flex",alignItems:"center",justifyContent:"center",
