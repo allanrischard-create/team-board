@@ -36,7 +36,7 @@ export default async function handler(req, res) {
       const { title, assignee, category, original_category, due_date } = req.body;
       const [task] = await db`
         INSERT INTO tasks (title, assignee, category, original_category, due_date)
-        VALUES (${title}, ${assignee}, ${category}, ${original_category}, ${due_date ?? null})
+        VALUES (${title}, ${assignee}, ${category}, ${original_category}, ${due_date || null})
         RETURNING *`;
       return res.status(201).json(task);
     }
@@ -53,7 +53,7 @@ export default async function handler(req, res) {
           assignee          = ${assignee},
           category          = ${category},
           original_category = ${original_category},
-          due_date          = ${due_date ?? null},
+          due_date          = ${due_date || null},
           done              = ${done},
           done_at           = ${done_at ?? null}
         WHERE id = ${id}
