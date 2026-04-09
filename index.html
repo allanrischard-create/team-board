@@ -1088,16 +1088,6 @@ function App(){
     return()=>clearInterval(i);
   },[]);
 
-  // Apply bg color to body
-  useEffect(()=>{ document.body.style.background=th.bg; },[th]);
-
-  if(!pwdHash||loading) return <div style={{width:"100vw",height:"100vh",background:th.bg,
-    display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
-    <div style={{width:42,height:42,borderRadius:11,background:th.logoGrad,
-      display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>⚡</div>
-    <div className="font-signs" style={{color:th.textGhost,fontSize:14,letterSpacing:".1em"}}>LOADING TEAM BOARD…</div>
-  </div>;
-
   const tvToggle=useCallback(async task=>{
     const updated={...task,done:!task.done,done_at:!task.done?new Date().toISOString():null};
     setTasks(p=>p.map(t=>t.id===task.id?updated:t));
@@ -1110,6 +1100,16 @@ function App(){
     try{ await api.deleteTask(id); }
     catch(e){ setError("Erreur suppression"); }
   },[setTasks,setError]);
+
+  // Apply bg color to body
+  useEffect(()=>{ document.body.style.background=th.bg; },[th]);
+
+  if(!pwdHash||loading) return <div style={{width:"100vw",height:"100vh",background:th.bg,
+    display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
+    <div style={{width:42,height:42,borderRadius:11,background:th.logoGrad,
+      display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>⚡</div>
+    <div className="font-signs" style={{color:th.textGhost,fontSize:14,letterSpacing:".1em"}}>LOADING TEAM BOARD…</div>
+  </div>;
 
   return <div style={{fontFamily:"'SIGNS',system-ui,sans-serif"}}>
     <Toast toasts={toasts} th={th}/>
