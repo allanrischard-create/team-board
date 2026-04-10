@@ -24,7 +24,6 @@ select,input,button{outline:none;font-family:inherit}
 @keyframes spin{to{transform:rotate(360deg)}}
 /* Theme toggle */
 .theme-toggle{width:44px;height:24px;border-radius:12px;border:none;cursor:pointer;position:relative;transition:background .3s;flex-shrink:0}
-.theme-toggle::after{content:'';position:absolute;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .3s;box-shadow:0 1px 4px rgba(0,0,0,.3)}
 /* Responsive */
 .cat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px}
 .daily-mgr-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
@@ -175,7 +174,12 @@ function ThemeSwitch({dark,onToggle}){
     <button className="theme-toggle"
       onClick={onToggle}
       title={dark?"Passer en mode clair":"Passer en mode sombre"}
-      style={{background:dark?DARK.toggleBg:LIGHT.toggleBg}}>
+      style={{
+        background: dark ? DARK.toggleBg : LIGHT.toggleBg,
+        boxShadow: dark
+          ? "0 0 0 1.5px #636366"
+          : "0 0 0 1.5px #AAAAAA, 0 2px 6px rgba(0,0,0,.25)"
+      }}>
       <span style={{position:"absolute",top:3,left:dark?DARK.toggleLeft:LIGHT.toggleLeft,
         width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left .3s",
         display:"flex",alignItems:"center",justifyContent:"center",fontSize:10}}>
@@ -258,10 +262,11 @@ function ErrorBanner({msg,onClose}){
 /* ═══════════════════════════════════════
    TV VIEW
 ═══════════════════════════════════════ */
-function TVView({tasks,members,onSwitch,dark,onToggleTheme,th,onToggle,onDelete}){
+function TVView({tasks,members,onSwitch,dark,onToggleTheme,th,onToggle,onDelete,createTask}){
   const [clock,setClock]=useState(new Date());
   const [tvMode,setTvMode]=useState("all");
   const [zoom,setZoom]=useState(()=>parseFloat(localStorage.getItem("tvZoom")||"1"));
+  const [addAssignee,setAddAssignee]=useState(null);
   useEffect(()=>{const i=setInterval(()=>setClock(new Date()),1000);return()=>clearInterval(i);},[]);
   const sorted=sortTasks(tasks),pending=sorted.filter(t=>!t.done),done=sorted.filter(t=>t.done);
   const pct=tasks.length?Math.round(done.length/tasks.length*100):0;
@@ -330,8 +335,11 @@ function TVView({tasks,members,onSwitch,dark,onToggleTheme,th,onToggle,onDelete}
     {tvMode==="all"
       ?<TVAllMode tasks={tasks} pending={pending} done={done} members={members} th={th} onToggle={onToggle} onDelete={onDelete}/>
       :tvMode==="daily"
-      ?<TVDailyMode tasks={tasks} members={members} th={th} onToggle={onToggle} onDelete={onDelete}/>
-      :<TVTeamMode tasks={tasks} members={members} th={th} onToggle={onToggle} onDelete={onDelete}/>}
+      ?<TVDailyMode tasks={tasks} members={members} th={th} onToggle={onToggle} onDelete={onDelete} onAddTask={m=>setAddAssignee(m)}/>
+      :<TVTeamMode tasks={tasks} members={members} th={th} onToggle={onToggle} onDelete={onDelete} onAddTask={m=>setAddAssignee(m)}/>}
+    {addAssignee&&createTask&&<TaskForm members={members} task={null} defaultAssignee={addAssignee}
+      onSave={async form=>{await createTask(form);setAddAssignee(null);}}
+      onClose={()=>setAddAssignee(null)} th={th}/>}
   </div>;
 }
 
@@ -399,7 +407,7 @@ function TVAllMode({tasks,pending,done,members,th,onToggle,onDelete}){
   </div>;
 }
 
-function TVDailyMode({tasks,members,th,onToggle,onDelete}){
+function TVDailyMode({tasks,members,th,onToggle,onDelete,onAddTask}){
   const withDaily=members.filter(m=>tasks.some(t=>t.assignee===m&&t.category==="Daily"));
   const cols=Math.min(4,Math.max(2,Math.ceil(Math.sqrt(withDaily.length||1))));
   return <div style={{flex:1,overflowY:"auto",padding:"24px 32px"}}>
@@ -422,6 +430,10 @@ function TVDailyMode({tasks,members,th,onToggle,onDelete}){
               <div style={{fontSize:11,color:th.textMute}}>{dn.length}/{all.length} done</div>
             </div>
             <div className="font-signs" style={{fontWeight:900,fontSize:22,color:allDone?"#32D74B":pct>50?"#FF9F0A":c}}>{pct}%</div>
+            {onAddTask&&<button onClick={e=>{e.stopPropagation();onAddTask(m);}}
+              style={{background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",border:"none",borderRadius:8,
+              color:"#fff",fontWeight:800,fontSize:11,padding:"5px 10px",cursor:"pointer",flexShrink:0,
+              fontFamily:"'SIGNS',system-ui",letterSpacing:".04em"}}>+ ADD</button>}
           </div>
           <div style={{height:3,background:th.border,borderRadius:3,overflow:"hidden",marginBottom:8}}>
             <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
@@ -458,7 +470,7 @@ function TVDailyMode({tasks,members,th,onToggle,onDelete}){
   </div>;
 }
 
-function TVTeamMode({tasks,members,th,onToggle,onDelete}){
+function TVTeamMode({tasks,members,th,onToggle,onDelete,onAddTask}){
   const cols=Math.min(4,Math.max(2,Math.ceil(Math.sqrt(members.length||1))));
   return <div style={{flex:1,overflowY:"auto",padding:"24px 32px"}}>
     <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:16}}>
@@ -481,6 +493,10 @@ function TVTeamMode({tasks,members,th,onToggle,onDelete}){
               <div style={{fontSize:11,color:th.textMute}}>{dn.length}/{all.length} done</div>
             </div>
             <div className="font-signs" style={{fontWeight:900,fontSize:22,color:allDone?"#32D74B":pct>50?"#FF9F0A":c}}>{pct}%</div>
+            {onAddTask&&<button onClick={e=>{e.stopPropagation();onAddTask(m);}}
+              style={{background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",border:"none",borderRadius:8,
+              color:"#fff",fontWeight:800,fontSize:11,padding:"5px 10px",cursor:"pointer",flexShrink:0,
+              fontFamily:"'SIGNS',system-ui",letterSpacing:".04em"}}>+ ADD</button>}
           </div>
           <div style={{height:3,background:th.border,borderRadius:3,overflow:"hidden",marginBottom:8}}>
             <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
@@ -704,7 +720,9 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
   const [tab,setTab]=useState("tasks");
   const [mode,setMode]=useState("all");
   const [showForm,setShowForm]=useState(false), [editTask,setEditTask]=useState(null);
+  const [preAssignee,setPreAssignee]=useState(null);
   const [fMember,setFMember]=useState("All"), [fCat,setFCat]=useState("All"), [fStatus,setFStatus]=useState("All");
+  const openFor=m=>{setEditTask(null);setPreAssignee(m);setShowForm(true);};
   const [showLogin,setShowLogin]=useState(false), [showAdmin,setShowAdmin]=useState(false), [isAdmin,setIsAdmin]=useState(false);
   const [confirm,ConfirmModalEl]=useConfirm(th);
   const [newHL,setNewHL]=useState(null);
@@ -742,7 +760,7 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
         setNewHL(created.id); setTimeout(()=>setNewHL(null),2000);
       }catch(e){ setError("Failed to add task: "+e.message); }
     }
-    setShowForm(false); setEditTask(null);
+    setShowForm(false); setEditTask(null); setPreAssignee(null);
   },[tasks,setTasks,setError]);
 
   const ss=selS(th), ib=inpBase(th);
@@ -808,6 +826,9 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
                 <div style={{fontSize:10,color:th.textMute}}>{dn.length}/{all.length} done</div>
               </div>
               <div className="font-signs" style={{fontWeight:900,fontSize:17,color:allDone?"#32D74B":pct>50?"#FF9F0A":c}}>{pct}%</div>
+              <button onClick={()=>openFor(m)} style={{background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",
+                border:"none",borderRadius:7,color:"#fff",fontWeight:800,fontSize:10,padding:"4px 9px",
+                cursor:"pointer",flexShrink:0,fontFamily:"'SIGNS',system-ui",letterSpacing:".04em"}}>+ ADD</button>
             </div>
             <div style={{height:3,background:th.border,borderRadius:3,overflow:"hidden",marginBottom:7}}>
               <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
@@ -901,6 +922,9 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
               </div>
             </div>
             <div className="font-signs" style={{fontWeight:900,fontSize:19,color:p2===100?"#32D74B":c}}>{p2}%</div>
+            <button onClick={()=>openFor(m)} style={{background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",
+              border:"none",borderRadius:7,color:"#fff",fontWeight:800,fontSize:10,padding:"5px 10px",
+              cursor:"pointer",flexShrink:0,fontFamily:"'SIGNS',system-ui",letterSpacing:".04em"}}>+ ADD</button>
           </div>
           <div style={{height:3,background:th.border2,borderRadius:3,overflow:"hidden",marginBottom:open.length?8:0}}>
             <div style={{height:"100%",width:`${p2}%`,background:p2===100?"#32D74B":c,borderRadius:3}}/>
@@ -917,7 +941,7 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
       })}
     </div>}
 
-    {showForm&&<TaskForm task={editTask} members={members} onSave={saveTask} onClose={()=>{setShowForm(false);setEditTask(null);}} th={th}/>}
+    {showForm&&<TaskForm task={editTask} members={members} defaultAssignee={preAssignee} onSave={saveTask} onClose={()=>{setShowForm(false);setEditTask(null);setPreAssignee(null);}} th={th}/>}
     {showLogin&&<AdminLoginModal pwdHash={pwdHash} th={th} onLogin={()=>{setIsAdmin(true);setShowLogin(false);setShowAdmin(true);}} onClose={()=>setShowLogin(false)}/>}
     {showAdmin&&<AdminPanel members={members} setMembers={setMembers} tasks={tasks} setTasks={setTasks}
       pwdHash={pwdHash} setPwdHash={setPwdHash} setError={setError} th={th} onClose={()=>setShowAdmin(false)}/>}
@@ -955,9 +979,9 @@ function ManagerCard({task,members,onToggle,onEdit,onDelete,highlight,th}){
   </div>;
 }
 
-function TaskForm({task,members,onSave,onClose,th}){
+function TaskForm({task,members,onSave,onClose,th,defaultAssignee}){
   const ib=inpBase(th);
-  const [form,setForm]=useState({title:task?.title||"",assignee:task?.assignee||members[0]||"",
+  const [form,setForm]=useState({title:task?.title||"",assignee:task?.assignee||defaultAssignee||members[0]||"",
     category:task?.category||"Daily",original_category:task?.original_category||"Daily",
     due_date:NEEDS_DUE.includes(task?.category)?task?.due_date||"":"",id:task?.id||null});
   const set=(k,v)=>setForm(f=>{const n={...f,[k]:v};if(k==="category"){n.original_category=v;if(!NEEDS_DUE.includes(v))n.due_date="";}return n;});
@@ -1097,6 +1121,14 @@ function App(){
     catch(e){ setTasks(p=>p.map(t=>t.id===task.id?task:t)); setError("Erreur mise à jour"); }
   },[setTasks,setError]);
 
+  const createTask=useCallback(async form=>{
+    const escalated=escalate(form);
+    try{
+      const created=await api.addTask(escalated);
+      setTasks(p=>[...p,created]);
+    }catch(e){ setError("Failed to add task: "+e.message); }
+  },[setTasks,setError]);
+
   const tvDelete=useCallback(async id=>{
     setTasks(p=>p.filter(t=>t.id!==id));
     try{ await api.deleteTask(id); }
@@ -1118,7 +1150,7 @@ function App(){
     <ErrorBanner msg={error} onClose={()=>setError(null)}/>
     {view==="tv"
       ?<TVView tasks={tasks} members={members} dark={dark} onToggleTheme={toggleTheme} th={th}
-          onToggle={tvToggle} onDelete={tvDelete}
+          onToggle={tvToggle} onDelete={tvDelete} createTask={createTask}
           onSwitch={()=>setView("manager")}/>
       :<ManagerView tasks={tasks} setTasks={setTasks} members={members} setMembers={setMembers}
           pwdHash={pwdHash} setPwdHash={setPwdHash} setError={setError}
