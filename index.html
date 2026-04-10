@@ -747,6 +747,7 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
   const [mode,setMode]=useState("all");
   const [showForm,setShowForm]=useState(false), [editTask,setEditTask]=useState(null);
   const [preAssignee,setPreAssignee]=useState(null);
+  const [showMultiForm,setShowMultiForm]=useState(false);
   const [fMember,setFMember]=useState("All"), [fCat,setFCat]=useState("All"), [fStatus,setFStatus]=useState("All");
   const openFor=m=>{setEditTask(null);setPreAssignee(m);setShowForm(true);};
   const openEdit=t=>{setEditTask(t);setPreAssignee(null);setShowForm(true);};
@@ -789,6 +790,28 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
     }
     setShowForm(false); setEditTask(null); setPreAssignee(null);
   },[tasks,setTasks,setError]);
+
+  const saveMultiTask=useCallback(async(form,selectedMembers)=>{
+    for(const m of selectedMembers){
+      const f={...form,assignee:m,id:null};
+      const escalated=escalate(f);
+      try{
+        const created=await api.addTask(escalated);
+        setTasks(p=>[...p,created]);
+      }catch(e){ setError("Erreur création tâche pour "+m); }
+    }
+    setShowMultiForm(false);
+  },[setTasks,setError]);
+
+  const cleanDone=useCallback(async memberName=>{
+    const done=tasks.filter(t=>t.assignee===memberName&&t.done);
+    if(!done.length) return;
+    const ok=await confirm(`Supprimer ${done.length} tâche${done.length>1?"s":""} terminée${done.length>1?"s":""} pour ${memberName} ?`);
+    if(!ok) return;
+    setTasks(p=>p.filter(t=>!(t.assignee===memberName&&t.done)));
+    try{ await Promise.all(done.map(t=>api.deleteTask(t.id))); }
+    catch(e){ setError("Erreur lors de la suppression"); }
+  },[tasks,confirm,setTasks,setError]);
 
   const ss=selS(th), ib=inpBase(th);
 
@@ -856,6 +879,12 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
               <button onClick={()=>openFor(m)} style={{background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",
                 border:"none",borderRadius:7,color:"#fff",fontWeight:800,fontSize:10,padding:"4px 9px",
                 cursor:"pointer",flexShrink:0,fontFamily:"'SIGNS',system-ui",letterSpacing:".04em"}}>+ ADD</button>
+              {dn.length>0&&<button onClick={()=>cleanDone(m)}
+                style={{background:"rgba(255,69,58,.12)",border:"1px solid rgba(255,69,58,.3)",borderRadius:7,
+                color:"#FF453A",fontWeight:800,fontSize:10,padding:"4px 9px",cursor:"pointer",flexShrink:0,
+                fontFamily:"'SIGNS',system-ui",letterSpacing:".04em"}} title={`Supprimer ${dn.length} tâche${dn.length>1?"s":""} terminée${dn.length>1?"s":""}`}>
+                🗑 CLEAN ({dn.length})
+              </button>}
             </div>
             <div style={{height:3,background:th.border,borderRadius:3,overflow:"hidden",marginBottom:7}}>
               <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
@@ -937,6 +966,16 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
 
     {/* Team tab */}
     {tab==="team"&&<div style={{padding:"14px"}}>
+      {/* Bouton ADD centré en haut du tab Team */}
+      <div style={{display:"flex",justifyContent:"center",marginBottom:14}}>
+        <button onClick={()=>setShowMultiForm(true)}
+          style={{background:"linear-gradient(135deg,#0A84FF,#32ADE6)",border:"none",borderRadius:11,
+          color:"#fff",fontWeight:800,fontSize:12,padding:"11px 28px",cursor:"pointer",
+          boxShadow:"0 4px 18px rgba(10,132,255,.3)",fontFamily:"'SIGNS',system-ui",letterSpacing:".06em",
+          display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:16}}>👥</span> + ASSIGNER UNE TÂCHE
+        </button>
+      </div>
       {!isAdmin&&<div style={{background:"rgba(255,159,10,.08)",border:"1px solid rgba(255,159,10,.25)",
         borderRadius:10,padding:"11px 14px",marginBottom:14,fontSize:12,color:"#FF9F0A",display:"flex",gap:8}}>
         🔒 <span>Member management requires <button onClick={()=>setShowLogin(true)}
@@ -979,6 +1018,7 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
     </div>}
 
     {showForm&&<TaskForm task={editTask} members={members} defaultAssignee={preAssignee} onSave={saveTask} onClose={()=>{setShowForm(false);setEditTask(null);setPreAssignee(null);}} th={th}/>}
+    {showMultiForm&&<MultiTaskForm members={members} onSave={saveMultiTask} onClose={()=>setShowMultiForm(false)} th={th}/>}
     {showLogin&&<AdminLoginModal pwdHash={pwdHash} th={th} onLogin={()=>{setIsAdmin(true);setShowLogin(false);setShowAdmin(true);}} onClose={()=>setShowLogin(false)}/>}
     {showAdmin&&<AdminPanel members={members} setMembers={setMembers} tasks={tasks} setTasks={setTasks}
       pwdHash={pwdHash} setPwdHash={setPwdHash} setError={setError} th={th} onClose={()=>setShowAdmin(false)}/>}
@@ -1086,6 +1126,116 @@ function TaskForm({task,members,onSave,onClose,th,defaultAssignee}){
             boxShadow:valid?"0 4px 18px rgba(94,92,230,.35)":"none",
             fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>
             {task?"SAVE CHANGES":"CREATE TASK"}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+/* ═══════════════════════════════════════
+   MULTI-ASSIGN FORM
+═══════════════════════════════════════ */
+function MultiTaskForm({members,onSave,onClose,th}){
+  const ib=inpBase(th);
+  const [form,setForm]=useState({title:"",category:"Daily",original_category:"Daily",due_date:""});
+  const [selected,setSelected]=useState([]);
+  const set=(k,v)=>setForm(f=>{const n={...f,[k]:v};if(k==="category"){n.original_category=v;if(!NEEDS_DUE.includes(v))n.due_date="";}return n;});
+  const toggleM=m=>setSelected(p=>p.includes(m)?p.filter(x=>x!==m):[...p,m]);
+  const allSel=selected.length===members.length;
+  const toggleAll=()=>setSelected(allSel?[]:[...members]);
+  const hasDue=NEEDS_DUE.includes(form.category),dueErr=hasDue&&!form.due_date;
+  const valid=form.title.trim()&&selected.length>0&&!dueErr;
+  const [busy,setBusy]=useState(false);
+  const handleSave=async()=>{if(!valid||busy)return;setBusy(true);await onSave(form,selected);setBusy(false);};
+  return <div style={{position:"fixed",inset:0,background:th.overlay,zIndex:200,
+    display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}>
+    <div style={{background:th.surface2,border:`1px solid ${th.border}`,borderRadius:20,
+      padding:"22px 20px 28px",width:"100%",maxWidth:540,margin:"0 16px",maxHeight:"90vh",overflowY:"auto"}}
+      onClick={e=>e.stopPropagation()}>
+      <div style={{width:36,height:4,background:th.border,borderRadius:2,margin:"0 auto 18px"}}/>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18}}>
+        <div style={{width:34,height:34,borderRadius:9,background:"linear-gradient(135deg,#0A84FF,#32ADE6)",
+          display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>👥</div>
+        <div>
+          <div className="font-signs" style={{fontWeight:900,fontSize:15,color:th.text,lineHeight:1}}>ASSIGN TO TEAM</div>
+          <div style={{fontSize:10,color:th.textMute,marginTop:2}}>Crée la même tâche pour plusieurs membres</div>
+        </div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        {/* Titre */}
+        <div>
+          <div className="font-signs" style={{fontSize:10,color:th.textMute,fontWeight:700,marginBottom:5,letterSpacing:".06em"}}>TITRE DE LA TÂCHE</div>
+          <input value={form.title} onChange={e=>set("title",e.target.value)} placeholder="Décris la tâche…" style={ib} autoFocus/>
+        </div>
+        {/* Membres */}
+        <div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+            <div className="font-signs" style={{fontSize:10,color:th.textMute,fontWeight:700,letterSpacing:".06em"}}>
+              MEMBRES {selected.length>0&&<span style={{color:"#5E5CE6"}}>({selected.length} sélectionné{selected.length>1?"s":""})</span>}
+            </div>
+            <button onClick={toggleAll} style={{background:allSel?"rgba(94,92,230,.15)":th.input,border:`1px solid ${allSel?"#5E5CE6":th.border}`,
+              borderRadius:7,color:allSel?"#5E5CE6":th.textSub,fontSize:9,fontWeight:800,padding:"4px 10px",cursor:"pointer",
+              fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>
+              {allSel?"✕ TOUT DÉSÉLECT.":"✓ TOUT SÉLECT."}
+            </button>
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:7}}>
+            {members.map(m=>{const sel=selected.includes(m),c=mColor(m,members);
+              return <div key={m} onClick={()=>toggleM(m)}
+                style={{display:"flex",alignItems:"center",gap:7,padding:"7px 12px",borderRadius:10,cursor:"pointer",
+                background:sel?`${c}18`:th.input,border:`2px solid ${sel?c:th.border}`,transition:"all .15s"}}>
+                <div style={{width:26,height:26,borderRadius:"50%",background:c,flexShrink:0,
+                  display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:11}}>
+                  {m[0].toUpperCase()}
+                </div>
+                <span className="font-signs" style={{fontWeight:700,fontSize:11,color:sel?c:th.textSub}}>{m}</span>
+                {sel&&<span style={{color:c,fontSize:13,fontWeight:900,marginLeft:2}}>✓</span>}
+              </div>;
+            })}
+          </div>
+          {selected.length===0&&<div style={{fontSize:10,color:"#FF453A",marginTop:5}}>⚠ Sélectionne au moins un membre</div>}
+        </div>
+        {/* Catégorie */}
+        <div>
+          <div className="font-signs" style={{fontSize:10,color:th.textMute,fontWeight:700,marginBottom:8,letterSpacing:".06em"}}>CATÉGORIE</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+            {CATEGORIES.map(cat=><button key={cat} onClick={()=>set("category",cat)} style={{
+              padding:"10px 4px",borderRadius:10,cursor:"pointer",
+              background:form.category===cat?CAT[cat].bg:th.input,
+              border:`2px solid ${form.category===cat?CAT[cat].color:th.border}`,
+              color:form.category===cat?CAT[cat].color:th.textFade,fontWeight:700,fontSize:9,transition:"all .15s",
+              display:"flex",flexDirection:"column",alignItems:"center",gap:3,
+              fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>
+              <span style={{fontSize:18}}>{CAT[cat].icon}</span>
+              <span>{cat.toUpperCase()}</span>
+              <span style={{fontSize:7,opacity:.6,fontWeight:400}}>{CAT[cat].hint}</span>
+            </button>)}
+          </div>
+        </div>
+        {/* Date */}
+        {hasDue&&<div>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
+            <div className="font-signs" style={{fontSize:10,color:th.textMute,fontWeight:700,letterSpacing:".06em"}}>DUE DATE</div>
+            <span style={{fontSize:9,color:"#FF453A",fontWeight:700}}>* required</span>
+          </div>
+          <input type="date" value={form.due_date} min={todayStr()} onChange={e=>set("due_date",e.target.value)}
+            style={{...ib,border:`1px solid ${dueErr?"#FF453A":th.border}`,colorScheme:th.name==="dark"?"dark":"light"}}/>
+          {form.due_date&&(()=>{const{text,color}=fmtDue(form.due_date);
+            return <div style={{marginTop:6,fontSize:11,color}}>⏰ {text}</div>;})()}
+          {dueErr&&<div style={{marginTop:5,fontSize:10,color:"#FF453A"}}>⚠ Choisis une date</div>}
+        </div>}
+        {/* Boutons */}
+        <div style={{display:"flex",gap:9,marginTop:4}}>
+          <button onClick={onClose} style={{flex:1,padding:"12px",borderRadius:10,border:`1px solid ${th.border}`,
+            background:"transparent",color:th.textSub,fontWeight:700,fontSize:12,cursor:"pointer",
+            fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>ANNULER</button>
+          <button onClick={handleSave} disabled={!valid||busy} style={{flex:2,padding:"12px",borderRadius:10,border:"none",
+            background:valid?"linear-gradient(135deg,#0A84FF,#32ADE6)":th.input,
+            color:valid?"#fff":th.textGhost,fontWeight:700,fontSize:12,cursor:valid?"pointer":"not-allowed",
+            boxShadow:valid?"0 4px 18px rgba(10,132,255,.35)":"none",
+            fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>
+            {busy?"CRÉATION…":selected.length>1?`CRÉER POUR ${selected.length} MEMBRES`:"CRÉER LA TÂCHE"}
           </button>
         </div>
       </div>
