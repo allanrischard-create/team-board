@@ -128,7 +128,17 @@ const fmtTime  = iso=>new Date(iso).toLocaleTimeString("fr-FR",{hour:"2-digit",m
 const fmtDate  = iso=>new Date(iso).toLocaleDateString("fr-FR",{day:"2-digit",month:"short"});
 const fmtFull  = iso=>`${fmtDate(iso)} ${fmtTime(iso)}`;
 const mColor   = (n,m)=>MCOLORS[Math.max(0,m.indexOf(n))%MCOLORS.length];
-const sortTasks= ts=>[...ts].sort((a,b)=>a.done!==b.done?(a.done?1:-1):CAT[a.category].rank-CAT[b.category].rank);
+const sortByDate=(a,b)=>{
+  if(!a.due_date&&!b.due_date) return 0;
+  if(!a.due_date) return 1;
+  if(!b.due_date) return -1;
+  return new Date(a.due_date)-new Date(b.due_date);
+};
+const sortTasks= ts=>[...ts].sort((a,b)=>{
+  if(a.done!==b.done) return a.done?1:-1;
+  const cr=CAT[a.category].rank-CAT[b.category].rank;
+  return cr!==0?cr:sortByDate(a,b);
+});
 
 function fmtDue(iso){
   const d=new Date(iso); d.setHours(0,0,0,0);
@@ -309,6 +319,12 @@ function TVView({tasks,members,onSwitch,dark,onToggleTheme,th,onToggle,onDelete,
           </div>
         </div>
       </div>
+      {/* TV↔Mobile switch */}
+      <button onClick={onSwitch} style={{background:"linear-gradient(135deg,#30D158,#25A244)",border:"none",borderRadius:9,
+        color:"#fff",fontWeight:800,fontSize:11,padding:"8px 14px",cursor:"pointer",marginLeft:8,
+        fontFamily:"'SIGNS',system-ui",letterSpacing:".06em",display:"flex",alignItems:"center",gap:6}}>
+        <span style={{fontSize:14}}>📱</span> VUE MOBILE
+      </button>
       {/* Mode toggle */}
       <div style={{display:"flex",background:th.surface2,border:`1px solid ${th.border}`,borderRadius:10,padding:3,gap:2,marginLeft:8}}>
         {[{id:"all",label:"📋 ALL"},{id:"daily",label:"🔥 DAILY"},{id:"team",label:"👥 TEAM"}].map(m=>(
@@ -342,7 +358,7 @@ function TVView({tasks,members,onSwitch,dark,onToggleTheme,th,onToggle,onDelete,
       <button onClick={zoomDown} style={{...btnStyle,color:"#FF9F0A",opacity:zoom===1?.35:1}} disabled={zoom===1}>🔍−</button>
       <span style={{color:"#FF9F0A",fontSize:11,fontWeight:700,minWidth:32,textAlign:"center"}}>{zoom===1?"100%":zoom===1.25?"125%":"150%"}</span>
       <button onClick={zoomUp} style={{...btnStyle,color:"#FF9F0A",opacity:zoom===1.5?.35:1}} disabled={zoom===1.5}>🔍+</button>
-      <button onClick={onSwitch} style={btnStyle}>⚙ MANAGE</button>
+      <button onClick={onSwitch} style={btnStyle}>⚙ ADMIN</button>
     </div>
     {tvMode==="all"
       ?<TVAllMode tasks={tasks} pending={pending} done={done} members={members} th={th} onToggle={onToggle} onDelete={onDelete} onEdit={tvOpenEdit}/>
@@ -514,7 +530,7 @@ function TVTeamMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onShowM
       {members.map(m=>{
         const all=tasks.filter(t=>t.assignee===m);
         if(!all.length) return null;
-        const pend=[...all.filter(t=>!t.done)].sort((a,b)=>CAT[a.category].rank-CAT[b.category].rank),dn=all.filter(t=>t.done);
+        const pend=[...all.filter(t=>!t.done)].sort((a,b)=>{const cr=CAT[a.category].rank-CAT[b.category].rank;return cr!==0?cr:sortByDate(a,b);}),dn=all.filter(t=>t.done);
         const pct=all.length?Math.round(dn.length/all.length*100):0;
         const c=mColor(m,members),allDone=all.length>0&&pct===100;
         return <div key={m} style={{background:allDone?"rgba(50,215,75,.06)":th.card,
@@ -1009,7 +1025,7 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
       {members.map(m=>{
         const mt=tasks.filter(t=>t.assignee===m),md=mt.filter(t=>t.done);
         const p2=mt.length?Math.round(md.length/mt.length*100):0,c=mColor(m,members);
-        const open=[...mt.filter(t=>!t.done)].sort((a,b)=>CAT[a.category].rank-CAT[b.category].rank),overdue=open.filter(t=>t.due_date&&new Date(t.due_date)<today());
+        const open=[...mt.filter(t=>!t.done)].sort((a,b)=>{const cr=CAT[a.category].rank-CAT[b.category].rank;return cr!==0?cr:sortByDate(a,b);}),overdue=open.filter(t=>t.due_date&&new Date(t.due_date)<today());
         return <div key={m} style={{background:th.card,border:`1px solid ${overdue.length?"#FF453A30":th.border2}`,
           borderRadius:12,padding:"13px 14px",marginBottom:9}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
@@ -1272,7 +1288,7 @@ function MultiTaskForm({members,onSave,onClose,th}){
    ROOT
 ═══════════════════════════════════════ */
 function App(){
-  const [view,setView]      = useState("tv");
+  const [view,setView]      = useState(()=>/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)?"manager":"tv");
   const [tasks,setTasks]    = useState([]);
   const [members,setMembers]= useState([]);
   const [pwdHash,setPwdHash]= useState(null);
