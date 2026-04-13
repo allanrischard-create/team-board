@@ -441,7 +441,7 @@ function TVDailyMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onClea
   const withDaily=members.filter(m=>tasks.some(t=>t.assignee===m&&t.category==="Daily"));
   const cols=Math.min(4,Math.max(2,Math.ceil(Math.sqrt(withDaily.length||1))));
   return <div style={{flex:1,overflowY:"auto",padding:"24px 32px"}}>
-    <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:16}}>
+    <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:16,alignItems:"start"}}>
       {members.map(m=>{
         const all=tasks.filter(t=>t.assignee===m&&t.category==="Daily");
         if(!all.length) return null;
@@ -474,30 +474,32 @@ function TVDailyMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onClea
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
             {pend.map(t=><div key={t.id}
-              style={{display:"flex",alignItems:"center",gap:8,
+              style={{display:"flex",alignItems:"flex-start",gap:8,
               background:th.card2,border:`1px solid ${th.border}`,borderRadius:8,padding:"7px 10px"}}>
               {/* Rond = cocher */}
               <div onClick={e=>{e.stopPropagation();onToggle&&onToggle(t);}}
                 style={{width:18,height:18,borderRadius:"50%",flexShrink:0,border:"2px solid #FF453A",
-                background:"transparent",cursor:"pointer",transition:"all .15s",display:"flex",alignItems:"center",justifyContent:"center"}}/>
+                background:"transparent",cursor:"pointer",transition:"all .15s",display:"flex",alignItems:"center",
+                justifyContent:"center",marginTop:2}}/>
               {/* Texte = éditer */}
               <span onClick={()=>onEdit&&onEdit(t)}
                 style={{fontSize:12,color:th.text2,fontWeight:800,flex:1,fontFamily:"'SIGNS',system-ui",
-                cursor:onEdit?"pointer":"default"}}>{t.title}</span>
+                wordBreak:"break-word",lineHeight:1.4,cursor:onEdit?"pointer":"default"}}>{t.title}</span>
             </div>)}
             {dn.map(t=><div key={t.id}
-              style={{display:"flex",alignItems:"center",gap:8,
+              style={{display:"flex",alignItems:"flex-start",gap:8,
               background:th.card2,border:`1px solid ${th.border3}`,borderRadius:8,padding:"7px 10px",opacity:.5}}>
               {/* Rond = décocher */}
               <div onClick={e=>{e.stopPropagation();onToggle&&onToggle(t);}}
                 style={{width:18,height:18,borderRadius:"50%",flexShrink:0,background:"#32D74B",
-                cursor:"pointer",transition:"all .15s",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                cursor:"pointer",transition:"all .15s",display:"flex",alignItems:"center",
+                justifyContent:"center",marginTop:2}}>
                 <span style={{color:"#fff",fontSize:9,fontWeight:900}}>✓</span>
               </div>
               {/* Texte = éditer */}
               <span onClick={()=>onEdit&&onEdit(t)}
                 style={{fontSize:12,color:th.textMute,fontWeight:800,textDecoration:"line-through",flex:1,
-                fontFamily:"'SIGNS',system-ui",cursor:onEdit?"pointer":"default"}}>{t.title}</span>
+                fontFamily:"'SIGNS',system-ui",wordBreak:"break-word",lineHeight:1.4,cursor:onEdit?"pointer":"default"}}>{t.title}</span>
               {t.done_at&&<span style={{fontFamily:"monospace",fontSize:9,color:"#32D74B",flexShrink:0}}>{fmtTime(t.done_at)}</span>}
               {onDelete&&<button onClick={e=>{e.stopPropagation();onDelete(t.id);}}
                 style={{background:"none",border:"none",cursor:"pointer",padding:"1px 3px",fontSize:11,
@@ -515,7 +517,8 @@ function TVDailyMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onClea
 }
 
 function TVTeamMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onShowMultiAssign}){
-  const cols=Math.min(4,Math.max(2,Math.ceil(Math.sqrt(members.length||1))));
+  const activeCols=members.filter(m=>tasks.some(t=>t.assignee===m));
+  const cols=Math.min(4,Math.max(2,Math.ceil(Math.sqrt(activeCols.length||1))));
   return <div style={{flex:1,overflowY:"auto",padding:"24px 32px"}}>
     {onShowMultiAssign&&<div style={{display:"flex",justifyContent:"center",marginBottom:20}}>
       <button onClick={onShowMultiAssign}
@@ -526,7 +529,7 @@ function TVTeamMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onShowM
         <span style={{fontSize:18}}>👥</span> + ASSIGNER UNE TÂCHE
       </button>
     </div>}
-    <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:16}}>
+    <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:16,alignItems:"start"}}>
       {members.map(m=>{
         const all=tasks.filter(t=>t.assignee===m);
         if(!all.length) return null;
@@ -554,34 +557,35 @@ function TVTeamMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onShowM
           <div style={{height:3,background:th.border,borderRadius:3,overflow:"hidden",marginBottom:8}}>
             <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
           </div>
-          <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:260,overflowY:"auto"}}>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
             {pend.map(t=>{const cfg=CAT[t.category];return <div key={t.id}
-              style={{display:"flex",alignItems:"center",gap:8,
+              style={{display:"flex",alignItems:"flex-start",gap:8,
               background:th.card2,border:`1px solid ${cfg.color+"20"}`,borderLeft:`2px solid ${cfg.color}`,
               borderRadius:8,padding:"6px 10px"}}>
               {/* Rond = cocher */}
               <div onClick={e=>{e.stopPropagation();onToggle&&onToggle(t);}}
-                style={{width:16,height:16,borderRadius:"50%",flexShrink:0,border:`2px solid ${cfg.color}`,
-                cursor:"pointer",transition:"all .15s",background:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}/>
+                style={{width:18,height:18,borderRadius:"50%",flexShrink:0,border:`2px solid ${cfg.color}`,
+                cursor:"pointer",transition:"all .15s",background:"transparent",display:"flex",alignItems:"center",
+                justifyContent:"center",marginTop:1}}/>
               {/* Texte = éditer */}
               <span onClick={()=>onEdit&&onEdit(t)}
                 style={{fontSize:11,color:th.text2,fontWeight:700,flex:1,fontFamily:"'SIGNS',system-ui",
-                whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",cursor:onEdit?"pointer":"default"}}>{t.title}</span>
-              <span style={{fontSize:8,color:cfg.color,fontFamily:"'SIGNS',system-ui",fontWeight:700,flexShrink:0}}>{t.category.slice(0,1)}</span>
+                wordBreak:"break-word",lineHeight:1.4,cursor:onEdit?"pointer":"default"}}>{t.title}</span>
+              <span style={{fontSize:8,color:cfg.color,fontFamily:"'SIGNS',system-ui",fontWeight:700,flexShrink:0,marginTop:2}}>{t.category.slice(0,1)}</span>
             </div>;})}
             {dn.map(t=><div key={t.id}
-              style={{display:"flex",alignItems:"center",gap:8,
+              style={{display:"flex",alignItems:"flex-start",gap:8,
               background:th.card2,border:`1px solid ${th.border3}`,borderRadius:8,padding:"6px 10px",opacity:.45}}>
               {/* Rond = décocher */}
               <div onClick={e=>{e.stopPropagation();onToggle&&onToggle(t);}}
-                style={{width:16,height:16,borderRadius:"50%",flexShrink:0,background:"#32D74B",
-                cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                style={{width:18,height:18,borderRadius:"50%",flexShrink:0,background:"#32D74B",
+                cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",marginTop:1}}>
                 <span style={{color:"#fff",fontSize:8,fontWeight:900}}>✓</span>
               </div>
               {/* Texte = éditer */}
               <span onClick={()=>onEdit&&onEdit(t)}
                 style={{fontSize:11,color:th.textMute,fontWeight:700,textDecoration:"line-through",flex:1,
-                fontFamily:"'SIGNS',system-ui",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
+                fontFamily:"'SIGNS',system-ui",wordBreak:"break-word",lineHeight:1.4,
                 cursor:onEdit?"pointer":"default"}}>{t.title}</span>
               {onDelete&&<button onClick={e=>{e.stopPropagation();onDelete(t.id);}}
                 style={{background:"none",border:"none",cursor:"pointer",padding:"1px 3px",fontSize:10,
@@ -819,8 +823,10 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
   const saveTask=useCallback(async form=>{
     const escalated=escalate(form);
     if(form.id){
+      const existing=tasks.find(t=>t.id===form.id);
+      const toSave={...escalated,done:existing?.done??false,done_at:existing?.done_at??null};
       setTasks(p=>p.map(t=>t.id===form.id?{...t,...escalated}:t));
-      try{ await api.updateTask(escalated); }
+      try{ await api.updateTask(toSave); }
       catch(e){ setError("Failed to update task"); }
     } else {
       try{
@@ -1362,8 +1368,10 @@ function App(){
   const tvSaveTask=useCallback(async form=>{
     const escalated=escalate(form);
     if(form.id){
+      const existing=tasks.find(t=>t.id===form.id);
+      const toSave={...escalated,done:existing?.done??false,done_at:existing?.done_at??null};
       setTasks(p=>p.map(t=>t.id===form.id?{...t,...escalated}:t));
-      try{ await api.updateTask(escalated); }
+      try{ await api.updateTask(toSave); }
       catch(e){ setError("Failed to update task"); }
     } else {
       try{
@@ -1371,7 +1379,7 @@ function App(){
         setTasks(p=>[...p,created]);
       }catch(e){ setError("Failed to add task: "+e.message); }
     }
-  },[setTasks,setError]);
+  },[tasks,setTasks,setError]);
 
   const tvDelete=useCallback(async id=>{
     setTasks(p=>p.filter(t=>t.id!==id));
