@@ -1,6 +1,20 @@
 {
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/:path*" },
-    { "source": "/(.*)",       "destination": "/index.html"  }
+    { "source": "/((?!api/|.*\\.).*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/sw.js",
+      "headers": [
+        { "key": "Content-Type", "value": "application/javascript; charset=utf-8" },
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
+        { "key": "Service-Worker-Allowed", "value": "/" }
+      ]
+    }
+  ],
+  "crons": [
+    { "path": "/api/slack?type=daily",   "schedule": "0 9 * * 1-5" },
+    { "path": "/api/slack?type=overdue", "schedule": "0 10 * * 1-5" }
   ]
 }
