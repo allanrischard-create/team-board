@@ -299,7 +299,7 @@ function ErrorBanner({msg,onClose}){
 ═══════════════════════════════════════ */
 function TVView({tasks,members,onSwitch,dark,onToggleTheme,th,onToggle,onDelete,tvSaveTask,tvCleanDone}){
   const [clock,setClock]=useState(new Date());
-  const [tvMode,setTvMode]=useState("all");
+  const [tvMode,setTvMode]=useState("team");
   const [zoom,setZoom]=useState(()=>parseFloat(localStorage.getItem("tvZoom")||"1"));
   const [tvForm,setTvForm]=useState(null);
   const [showTvMultiForm,setShowTvMultiForm]=useState(false);
@@ -391,7 +391,7 @@ function TVView({tasks,members,onSwitch,dark,onToggleTheme,th,onToggle,onDelete,
       ?<TVAllMode tasks={tasks} pending={pending} done={done} members={members} th={th} onToggle={onToggle} onDelete={onDelete} onEdit={tvOpenEdit}/>
       :tvMode==="daily"
       ?<TVDailyMode tasks={tasks} members={members} th={th} onToggle={onToggle} onDelete={onDelete} onAddTask={tvOpenAdd} onEdit={tvOpenEdit} onCleanDone={tvHandleCleanDone}/>
-      :<TVTeamMode tasks={tasks} members={members} th={th} onToggle={onToggle} onDelete={onDelete} onAddTask={tvOpenAdd} onEdit={tvOpenEdit} onShowMultiAssign={()=>setShowTvMultiForm(true)}/>}
+      :<TVTeamMode tasks={tasks} members={members} th={th} onToggle={onToggle} onDelete={onDelete} onAddTask={tvOpenAdd} onEdit={tvOpenEdit} onCleanDone={tvHandleCleanDone} onShowMultiAssign={()=>setShowTvMultiForm(true)}/>}
     {TVConfirmModal}
     {tvForm&&tvSaveTask&&<TaskForm members={members} task={tvForm.task} defaultAssignee={tvForm.defaultAssignee}
       onSave={async form=>{await tvSaveTask(form);setTvForm(null);}}
@@ -549,7 +549,7 @@ function TVDailyMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onClea
   </div>;
 }
 
-function TVTeamMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onShowMultiAssign}){
+function TVTeamMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onCleanDone,onShowMultiAssign}){
   const activeCols=members.filter(m=>tasks.some(t=>t.assignee===m));
   const cols=Math.min(4,Math.max(2,Math.ceil(Math.sqrt(activeCols.length||1))));
   return <div style={{flex:1,overflowY:"auto",padding:"24px 32px"}}>
@@ -586,6 +586,10 @@ function TVTeamMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onShowM
               style={{background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",border:"none",borderRadius:8,
               color:"#fff",fontWeight:800,fontSize:11,padding:"5px 10px",cursor:"pointer",flexShrink:0,
               fontFamily:"'SIGNS',system-ui",letterSpacing:".04em"}}>+ ADD</button>}
+            {onCleanDone&&dn.length>0&&<button onClick={e=>{e.stopPropagation();onCleanDone(m,dn.length);}}
+              style={{background:"rgba(255,69,58,.12)",border:"1px solid rgba(255,69,58,.3)",borderRadius:8,
+              color:"#FF453A",fontWeight:800,fontSize:11,padding:"5px 10px",cursor:"pointer",flexShrink:0,
+              fontFamily:"'SIGNS',system-ui",letterSpacing:".04em"}}>🗑 CLEAN ({dn.length})</button>}
           </div>
           <div style={{height:3,background:th.border,borderRadius:3,overflow:"hidden",marginBottom:8}}>
             <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
