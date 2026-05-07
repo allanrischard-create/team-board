@@ -1094,13 +1094,21 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
             <div style={{height:"100%",width:`${p2}%`,background:p2===100?"#32D74B":c,borderRadius:3}}/>
           </div>
           {open.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-            {open.map(t=><span key={t.id} onClick={()=>openEdit(t)}
+            {open.map(t=><div key={t.id}
               style={{fontSize:10,background:CAT[t.category].bg,color:CAT[t.category].color,
-              border:`1px solid ${CAT[t.category].color}30`,padding:"3px 9px",borderRadius:20,
-              fontFamily:"'SIGNS',system-ui",fontWeight:700,cursor:"pointer"}}>
-              {CAT[t.category].icon} {t.title}
-              {t.due_date&&<span style={{opacity:.6}}> · {fmtDue(t.due_date).text}</span>}
-            </span>)}
+              border:`1px solid ${CAT[t.category].color}30`,padding:"3px 9px 3px 5px",borderRadius:20,
+              fontFamily:"'SIGNS',system-ui",fontWeight:700,
+              display:"inline-flex",alignItems:"center",gap:6}}>
+              {/* Rond = cocher la tâche */}
+              <div onClick={e=>{e.stopPropagation();toggleDone(t);}} role="button" aria-label="Cocher la tâche"
+                style={{width:14,height:14,borderRadius:"50%",flexShrink:0,
+                border:`2px solid ${CAT[t.category].color}`,background:"transparent",cursor:"pointer"}}/>
+              {/* Texte = ouvrir l'éditeur */}
+              <span onClick={()=>openEdit(t)} style={{cursor:"pointer"}}>
+                {CAT[t.category].icon} {t.title}
+                {t.due_date&&<span style={{opacity:.6}}> · {fmtDue(t.due_date).text}</span>}
+              </span>
+            </div>)}
           </div>}
         </div>;
       })}
