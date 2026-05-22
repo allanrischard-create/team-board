@@ -294,6 +294,23 @@ function ErrorBanner({msg,onClose}){
   </div>;
 }
 
+function UndoToast({pendingUndo,onUndo,onDismiss,th}){
+  if(!pendingUndo) return null;
+  const n=pendingUndo.items.length;
+  const label=pendingUndo.label||(n===1?`« ${pendingUndo.items[0].title} » supprimée`:`${n} tâches supprimées`);
+  return <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:9998,
+    background:th.surface,border:`1px solid ${th.border2}`,borderLeft:"3px solid #5E5CE6",borderRadius:12,
+    padding:"10px 14px",display:"flex",alignItems:"center",gap:12,maxWidth:460,
+    boxShadow:"0 10px 32px rgba(0,0,0,.4)",animation:"slideIn .25s ease"}}>
+    <span style={{fontSize:14,flexShrink:0}}>🗑️</span>
+    <span style={{fontSize:12,color:th.text,flex:1,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</span>
+    <button onClick={onUndo} style={{background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",color:"#fff",
+      border:"none",borderRadius:8,padding:"6px 12px",fontWeight:800,fontSize:10,cursor:"pointer",
+      fontFamily:"'SIGNS',system-ui",letterSpacing:".08em",flexShrink:0}}>↶ ANNULER</button>
+    <button onClick={onDismiss} style={{background:"none",border:"none",color:th.textMute,cursor:"pointer",fontSize:16,flexShrink:0}}>✕</button>
+  </div>;
+}
+
 /* ═══════════════════════════════════════
    TV VIEW
 ═══════════════════════════════════════ */
@@ -824,7 +841,7 @@ function AdminPanel({members,setMembers,tasks,setTasks,pwdHash,setPwdHash,onClos
 const selS=(th)=>({background:th.card2,border:`1px solid ${th.border}`,borderRadius:8,color:th.textSub,fontSize:12,padding:"8px 10px",cursor:"pointer",flexShrink:0});
 const inpBase=(th)=>({background:th.input,border:`1px solid ${th.border}`,borderRadius:9,color:th.text,fontSize:13,padding:"10px 12px",width:"100%",outline:"none"});
 
-function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setError,onSwitch,dark,onToggleTheme,th}){
+function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setError,setPendingUndo,onSwitch,dark,onToggleTheme,th}){
   const [tab,setTab]=useState("tasks");
   const [mode,setMode]=useState("all");
   const [showForm,setShowForm]=useState(false), [editTask,setEditTask]=useState(null);
@@ -852,10 +869,14 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
   const deleteTask=useCallback(async id=>{
     const t=tasks.find(x=>x.id===id);
     const ok=await confirm(`Delete "${t?.title}"?`); if(!ok) return;
+    const snap={...t};
     setTasks(p=>p.filter(t=>t.id!==id));
-    try{ await api.deleteTask(id); }
+    try{
+      await api.deleteTask(id);
+      if(t) setPendingUndo({items:[snap],at:Date.now()});
+    }
     catch(e){ setTasks(p=>[...p,t]); setError("Failed to delete task"); }
-  },[tasks,confirm,setTasks,setError]);
+  },[tasks,confirm,setTasks,setError,setPendingUndo]);
 
   const saveTask=useCallback(async form=>{
     const escalated=escalate(form);
@@ -892,10 +913,15 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
     if(!done.length) return;
     const ok=await confirm(`Supprimer ${done.length} tâche${done.length>1?"s":""} terminée${done.length>1?"s":""} pour ${memberName} ?`);
     if(!ok) return;
+    const snap=done.map(t=>({...t}));
     setTasks(p=>p.filter(t=>!(t.assignee===memberName&&t.done)));
-    try{ await Promise.all(done.map(t=>api.deleteTask(t.id))); }
+    try{
+      await Promise.all(done.map(t=>api.deleteTask(t.id)));
+      setPendingUndo({items:snap,at:Date.now(),
+        label:`${snap.length} tâche${snap.length>1?"s":""} de ${memberName} supprimée${snap.length>1?"s":""}`});
+    }
     catch(e){ setError("Erreur lors de la suppression"); }
-  },[tasks,confirm,setTasks,setError]);
+  },[tasks,confirm,setTasks,setError,setPendingUndo]);
 
   const ss=selS(th), ib=inpBase(th);
 
@@ -1351,8 +1377,40 @@ function App(){
   const [loading,setLoading]= useState(true);
   const [error,setError]    = useState(null);
   const [toasts,setToasts]  = useState([]);
+  const [pendingUndo,setPendingUndo] = useState(null);
   const [dark,setDark]      = useState(()=>localStorage.getItem("theme")!=="light");
   const prevDone            = useRef(new Set());
+
+  // Auto-dismiss du toast Undo après 6s
+  useEffect(()=>{
+    if(!pendingUndo) return;
+    const t=setTimeout(()=>setPendingUndo(null),6000);
+    return ()=>clearTimeout(t);
+  },[pendingUndo]);
+
+  const restoreUndo=useCallback(async()=>{
+    if(!pendingUndo) return;
+    const items=pendingUndo.items;
+    setPendingUndo(null);
+    try{
+      const restored=[];
+      for(const t of items){
+        const created=await api.addTask({
+          title:t.title, assignee:t.assignee, category:t.category,
+          original_category:t.original_category, due_date:t.due_date||null
+        });
+        if(t.done){
+          const updated={...created,done:true,done_at:t.done_at||new Date().toISOString()};
+          await api.updateTask(updated);
+          restored.push(updated);
+          prevDone.current.add(updated.id);
+        } else {
+          restored.push(created);
+        }
+      }
+      setTasks(p=>[...p,...restored]);
+    }catch(e){ setError("Erreur restauration : "+e.message); }
+  },[pendingUndo]);
 
   const th = dark ? DARK : LIGHT;
 
@@ -1410,8 +1468,13 @@ function App(){
   const tvCleanDone=useCallback(async memberName=>{
     const done=tasks.filter(t=>t.assignee===memberName&&t.done);
     if(!done.length) return;
+    const snap=done.map(t=>({...t}));
     setTasks(p=>p.filter(t=>!(t.assignee===memberName&&t.done)));
-    try{ await Promise.all(done.map(t=>api.deleteTask(t.id))); }
+    try{
+      await Promise.all(done.map(t=>api.deleteTask(t.id)));
+      setPendingUndo({items:snap,at:Date.now(),
+        label:`${snap.length} tâche${snap.length>1?"s":""} de ${memberName} supprimée${snap.length>1?"s":""}`});
+    }
     catch(e){ setError("Erreur suppression"); }
   },[tasks,setTasks,setError]);
 
@@ -1432,10 +1495,14 @@ function App(){
   },[tasks,setTasks,setError]);
 
   const tvDelete=useCallback(async id=>{
+    const snap=tasks.find(x=>x.id===id);
     setTasks(p=>p.filter(t=>t.id!==id));
-    try{ await api.deleteTask(id); }
+    try{
+      await api.deleteTask(id);
+      if(snap) setPendingUndo({items:[{...snap}],at:Date.now()});
+    }
     catch(e){ setError("Erreur suppression"); }
-  },[setTasks,setError]);
+  },[tasks,setTasks,setError]);
 
   // Apply bg color to body
   useEffect(()=>{ document.body.style.background=th.bg; },[th]);
@@ -1450,12 +1517,13 @@ function App(){
   return <div style={{fontFamily:"'SIGNS',system-ui,sans-serif"}}>
     <Toast toasts={toasts} th={th}/>
     <ErrorBanner msg={error} onClose={()=>setError(null)}/>
+    <UndoToast pendingUndo={pendingUndo} onUndo={restoreUndo} onDismiss={()=>setPendingUndo(null)} th={th}/>
     {view==="tv"
       ?<TVView tasks={tasks} members={members} dark={dark} onToggleTheme={toggleTheme} th={th}
           onToggle={tvToggle} onDelete={tvDelete} tvSaveTask={tvSaveTask} tvCleanDone={tvCleanDone}
           onSwitch={()=>setView("manager")}/>
       :<ManagerView tasks={tasks} setTasks={setTasks} members={members} setMembers={setMembers}
-          pwdHash={pwdHash} setPwdHash={setPwdHash} setError={setError}
+          pwdHash={pwdHash} setPwdHash={setPwdHash} setError={setError} setPendingUndo={setPendingUndo}
           dark={dark} onToggleTheme={toggleTheme} th={th}
           onSwitch={()=>setView("tv")}/>}
   </div>;
