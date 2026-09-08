@@ -4,14 +4,6 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Team Board ⚡</title>
-<link rel="manifest" href="/manifest.webmanifest"/>
-<meta name="theme-color" content="#000000"/>
-<meta name="apple-mobile-web-app-capable" content="yes"/>
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<meta name="apple-mobile-web-app-title" content="Team Board"/>
-<link rel="apple-touch-icon" href="/icons/icon-192.png"/>
-<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png"/>
-<link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -32,11 +24,6 @@ select,input,button{outline:none;font-family:inherit}
 @keyframes spin{to{transform:rotate(360deg)}}
 /* Theme toggle */
 .theme-toggle{width:44px;height:24px;border-radius:12px;border:none;cursor:pointer;position:relative;transition:background .3s;flex-shrink:0}
-/* Poignée de glisser-déposer des panneaux membres */
-.drag-handle{transition:background .15s}
-.drag-handle svg{opacity:.75;transition:opacity .15s}
-.drag-handle:hover{background:rgba(127,127,127,.14)}
-.drag-handle:hover svg{opacity:1}
 /* Responsive */
 .cat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px}
 .daily-mgr-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
@@ -51,7 +38,7 @@ select,input,button{outline:none;font-family:inherit}
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } = React;
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ─── THEMES ─── */
 const DARK = {
@@ -127,7 +114,6 @@ const MCOLORS = ["#5E5CE6","#E8705A","#4ECDC4","#F9CA24","#A29BFE","#FD79A8","#0
 const ADMIN_EMAIL = "allan.rischard@sheriffprojects.com";
 const NEEDS_DUE   = ["Weekly","Monthly","Backlog"];
 const POLL_MS     = 5000;
-const REORDER_GRACE_MS = 8000;   // délai pendant lequel le polling n'écrase pas un ordre réordonné localement
 
 /* ─── CRYPTO ─── */
 async function sha256(str){
@@ -141,28 +127,7 @@ const todayStr = ()=>today().toISOString().split("T")[0];
 const fmtTime  = iso=>new Date(iso).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
 const fmtDate  = iso=>new Date(iso).toLocaleDateString("fr-FR",{day:"2-digit",month:"short"});
 const fmtFull  = iso=>`${fmtDate(iso)} ${fmtTime(iso)}`;
-/* Couleur d'un membre : basée sur l'ordre de création (COLOR_ORDER, rempli au chargement),
-   pas sur l'ordre d'affichage, pour qu'un glisser-déposer ne change pas les couleurs. */
-let COLOR_ORDER=[];
-const setColorOrder=rows=>{ COLOR_ORDER=[...rows].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(r=>r.name); };
-const mColor   = (n,m)=>{ const base=COLOR_ORDER.includes(n)?COLOR_ORDER:(m||[]); return MCOLORS[Math.max(0,base.indexOf(n))%MCOLORS.length]; };
-/* ISO 8601 week number (lundi = 1er jour, semaine 1 = celle qui contient le 1er jeudi) */
-const weekNum  = (d=new Date())=>{
-  const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
-  t.setUTCDate(t.getUTCDate()+4-(t.getUTCDay()||7));
-  const yearStart=new Date(Date.UTC(t.getUTCFullYear(),0,1));
-  return Math.ceil((((t-yearStart)/86400000)+1)/7);
-};
-/* Retard en jours pour une tâche non cochée :
-   - basé sur due_date si renseignée, sinon sur created_at
-   - 0 si pas encore en retard, augmente de +1 chaque jour qui passe */
-const overdueDays=task=>{
-  if(task.done) return 0;
-  const ref=task.due_date?new Date(task.due_date):(task.created_at?new Date(task.created_at):null);
-  if(!ref||isNaN(ref)) return 0;
-  ref.setHours(0,0,0,0);
-  return Math.max(0,Math.floor((today()-ref)/86400000));
-};
+const mColor   = (n,m)=>MCOLORS[Math.max(0,m.indexOf(n))%MCOLORS.length];
 const sortByDate=(a,b)=>{
   if(!a.due_date&&!b.due_date) return 0;
   if(!a.due_date) return 1;
@@ -205,13 +170,12 @@ async function apiFetch(url,options={}){
 }
 const api={
   getTasks:    ()      =>apiFetch("/api/tasks"),
-  getMembers:  ()      =>apiFetch("/api/members?detail=1"),   // [{name,position,created_at}] triés par ordre d'affichage
+  getMembers:  ()      =>apiFetch("/api/members"),
   addTask:     (d)     =>apiFetch("/api/tasks",{method:"POST",body:d}),
   updateTask:  (d)     =>apiFetch("/api/tasks",{method:"PUT",body:d}),
   deleteTask:  (id)    =>apiFetch(`/api/tasks?id=${id}`,{method:"DELETE"}),
   addMember:   (name)  =>apiFetch("/api/members",{method:"POST",body:{name}}),
   deleteMember:(name)  =>apiFetch(`/api/members?name=${encodeURIComponent(name)}`,{method:"DELETE"}),
-  reorderMembers:(order)=>apiFetch("/api/members",{method:"PUT",body:{order}}),
 };
 
 /* ─── THEME TOGGLE ─── */
@@ -305,216 +269,12 @@ function ErrorBanner({msg,onClose}){
   </div>;
 }
 
-function UndoToast({pendingUndo,onUndo,onDismiss,th}){
-  if(!pendingUndo) return null;
-  const n=pendingUndo.items.length;
-  const label=pendingUndo.label||(n===1?`« ${pendingUndo.items[0].title} » supprimée`:`${n} tâches supprimées`);
-  return <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:9998,
-    background:th.surface,border:`1px solid ${th.border2}`,borderLeft:"3px solid #5E5CE6",borderRadius:12,
-    padding:"10px 14px",display:"flex",alignItems:"center",gap:12,maxWidth:460,
-    boxShadow:"0 10px 32px rgba(0,0,0,.4)",animation:"slideIn .25s ease"}}>
-    <span style={{fontSize:14,flexShrink:0}}>🗑️</span>
-    <span style={{fontSize:12,color:th.text,flex:1,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</span>
-    <button onClick={onUndo} style={{background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",color:"#fff",
-      border:"none",borderRadius:8,padding:"6px 12px",fontWeight:800,fontSize:10,cursor:"pointer",
-      fontFamily:"'SIGNS',system-ui",letterSpacing:".08em",flexShrink:0}}>↶ ANNULER</button>
-    <button onClick={onDismiss} style={{background:"none",border:"none",color:th.textMute,cursor:"pointer",fontSize:16,flexShrink:0}}>✕</button>
-  </div>;
-}
-
-/* ═══════════════════════════════════════
-   GLISSER-DÉPOSER DES PANNEAUX MEMBRES
-   - souris et tactile (Pointer Events), poignée dédiée (grip + avatar)
-   - l'ordre visuel est piloté par la propriété CSS `order` : le DOM ne bouge pas
-     pendant le drag, un « fantôme » suit le pointeur, les autres panneaux glissent (FLIP)
-   - au relâchement : onReorder(nouvelOrdre) → sauvegarde partagée en base
-═══════════════════════════════════════ */
-const DRAG_THRESHOLD=6;   // px de déplacement avant que le drag démarre (évite les clics involontaires)
-const DRAG_EDGE=56;       // zone d'auto-défilement près des bords du conteneur
-const cssEscape=s=>(window.CSS&&CSS.escape)?CSS.escape(s):String(s).replace(/["\\]/g,"\\$&");
-
-function GripIcon({color}){
-  return <svg width="10" height="16" viewBox="0 0 10 16" fill={color} aria-hidden="true" style={{display:"block"}}>
-    {[2,8,14].map(y=>[2,8].map(x=><circle key={`${x}-${y}`} cx={x} cy={y} r="1.7"/>))}
-  </svg>;
-}
-
-function findScrollParent(el){
-  let n=el?el.parentElement:null;
-  while(n&&n!==document.body){
-    const s=getComputedStyle(n);
-    if(/(auto|scroll)/.test(s.overflowY)&&n.scrollHeight>n.clientHeight+1) return n;
-    n=n.parentElement;
-  }
-  return window;
-}
-
-function useMemberDrag(members,onReorder){
-  const [order,setOrder]=useState(members);
-  const [dragName,setDragName]=useState(null);
-  const containerRef=useRef(null);
-  const orderRef=useRef(order);         orderRef.current=order;
-  const membersRef=useRef(members);     membersRef.current=members;
-  const onReorderRef=useRef(onReorder); onReorderRef.current=onReorder;
-  const st=useRef(null);        // session de drag en cours
-  const rectsRef=useRef(null);  // positions avant permutation (animation FLIP)
-
-  // Hors drag, l'ordre local suit l'ordre partagé (polling, autres écrans)
-  useEffect(()=>{ if(!st.current) setOrder(members); },[members]);
-
-  // FLIP : les panneaux qui changent de place glissent au lieu de sauter
-  useLayoutEffect(()=>{
-    const s=st.current,c=containerRef.current,prev=rectsRef.current;
-    rectsRef.current=null;
-    if(!s||!s.active||!c||!prev) return;
-    c.querySelectorAll("[data-member]").forEach(el=>{
-      const name=el.dataset.member,p=prev.get(name); if(!p||name===s.name) return;
-      const r=el.getBoundingClientRect(),dx=(p.left-r.left)/s.scale,dy=(p.top-r.top)/s.scale;
-      if(!dx&&!dy) return;
-      el.style.transition="none"; el.style.transform=`translate(${dx}px,${dy}px)`;
-      requestAnimationFrame(()=>{ el.style.transition="transform .18s ease"; el.style.transform=""; });
-    });
-  },[order]);
-
-  const fns=useRef(null);
-  if(!fns.current){
-    const items=()=>containerRef.current?Array.from(containerRef.current.querySelectorAll("[data-member]")):[];
-    const snapshotRects=()=>{ const m=new Map(); items().forEach(el=>m.set(el.dataset.member,el.getBoundingClientRect())); return m; };
-    const clearFx=()=>items().forEach(el=>{ el.style.transform=""; el.style.transition=""; });
-    const moveGhost=(s,x,y)=>{ if(s.ghost) s.ghost.style.transform=`translate(${x-s.offX}px,${y-s.offY}px)`; };
-
-    const hitTest=(s,x,y)=>{
-      if(!s.active||Date.now()-s.lastSwap<80) return;
-      const c=containerRef.current; if(!c) return;
-      const under=document.elementFromPoint(x,y);
-      const target=under&&under.closest?under.closest("[data-member]"):null;
-      if(!target||!c.contains(target)) return;
-      const over=target.dataset.member; if(over===s.name) return;
-      const cur=orderRef.current,from=cur.indexOf(s.name),to=cur.indexOf(over);
-      if(from<0||to<0||from===to) return;
-      // On ne permute qu'une fois le pointeur passé au milieu de la cible (pas d'oscillation)
-      const tr=target.getBoundingClientRect(),me=s.el.getBoundingClientRect();
-      const sameRow=Math.abs(tr.top-me.top)<Math.max(tr.height,me.height)/2;
-      const cx=tr.left+tr.width/2,cy=tr.top+tr.height/2,forward=to>from;
-      const passed=sameRow?(forward?x>cx:x<cx):(forward?y>cy:y<cy);
-      if(!passed) return;
-      const next=cur.filter(n=>n!==s.name); next.splice(to,0,s.name);
-      rectsRef.current=snapshotRects(); s.lastSwap=Date.now();
-      setOrder(next);
-    };
-
-    const beginDrag=(s,x,y)=>{
-      const el=s.el,r=el.getBoundingClientRect();
-      s.active=true;
-      s.scale=el.offsetWidth?r.width/el.offsetWidth:1;   // compense le `zoom` CSS de la vue TV
-      s.offX=x-r.left; s.offY=y-r.top;
-      // Fantôme : clone du panneau qui suit le pointeur
-      const wrap=document.createElement("div");
-      wrap.style.cssText="position:fixed;left:0;top:0;z-index:99999;pointer-events:none;will-change:transform;";
-      const clone=el.cloneNode(true);
-      clone.removeAttribute("data-member");
-      Object.assign(clone.style,{zoom:s.scale,width:el.offsetWidth+"px",margin:"0",opacity:"0.96",order:"0",
-        boxShadow:"0 18px 48px rgba(0,0,0,.45)",transform:"rotate(1.5deg) scale(1.02)",transition:"none"});
-      wrap.appendChild(clone); document.body.appendChild(wrap); s.ghost=wrap;
-      moveGhost(s,x,y);
-      s.scrollEl=findScrollParent(containerRef.current);
-      document.body.style.userSelect="none"; document.body.style.cursor="grabbing";
-      setDragName(s.name);
-      // Auto-défilement quand le pointeur approche des bords
-      const tick=()=>{
-        if(st.current!==s) return;
-        const sc=s.scrollEl,rect=sc===window?{top:0,bottom:window.innerHeight}:sc.getBoundingClientRect();
-        let dy=0;
-        if(s.lastY<rect.top+DRAG_EDGE) dy=-Math.ceil((rect.top+DRAG_EDGE-s.lastY)/4);
-        else if(s.lastY>rect.bottom-DRAG_EDGE) dy=Math.ceil((s.lastY-(rect.bottom-DRAG_EDGE))/4);
-        if(dy){ if(sc===window) window.scrollBy(0,dy); else sc.scrollTop+=dy; hitTest(s,s.lastX,s.lastY); }
-        s.raf=requestAnimationFrame(tick);
-      };
-      s.raf=requestAnimationFrame(tick);
-    };
-
-    const finish=cancel=>{
-      const s=st.current; if(!s) return;
-      st.current=null;
-      window.removeEventListener("pointermove",onMove); window.removeEventListener("pointerup",onUp);
-      window.removeEventListener("pointercancel",onCancel); window.removeEventListener("keydown",onKey);
-      window.removeEventListener("blur",onCancel);
-      if(s.raf) cancelAnimationFrame(s.raf);
-      if(s.ghost) s.ghost.remove();
-      try{ s.handle.releasePointerCapture(s.pointerId); }catch(e){}
-      if(!s.active) return;
-      document.body.style.userSelect=""; document.body.style.cursor="";
-      clearFx();
-      setDragName(null);
-      const final=orderRef.current,initial=s.initial;
-      if(cancel){ setOrder(membersRef.current); return; }
-      const changed=final.length!==initial.length||final.some((n,i)=>n!==initial[i]);
-      if(changed&&onReorderRef.current) onReorderRef.current(final); else setOrder(membersRef.current);
-    };
-    const onMove=ev=>{
-      const s=st.current; if(!s||ev.pointerId!==s.pointerId) return;
-      s.lastX=ev.clientX; s.lastY=ev.clientY;
-      if(!s.active){
-        if(Math.hypot(ev.clientX-s.startX,ev.clientY-s.startY)<DRAG_THRESHOLD) return;
-        beginDrag(s,ev.clientX,ev.clientY);
-      }
-      if(ev.cancelable) ev.preventDefault();
-      moveGhost(s,ev.clientX,ev.clientY);
-      hitTest(s,ev.clientX,ev.clientY);
-    };
-    const onUp=ev=>{ const s=st.current; if(s&&ev.pointerId===s.pointerId) finish(false); };
-    const onCancel=()=>finish(true);
-    const onKey=ev=>{ if(ev.key==="Escape") finish(true); };
-    const onDown=(name,ev)=>{
-      if(st.current) return;
-      if(ev.pointerType==="mouse"&&ev.button!==0) return;
-      const c=containerRef.current;
-      const el=c?c.querySelector(`[data-member="${cssEscape(name)}"]`):null; if(!el) return;
-      ev.preventDefault(); ev.stopPropagation();
-      st.current={name,el,handle:ev.currentTarget,pointerId:ev.pointerId,startX:ev.clientX,startY:ev.clientY,
-        lastX:ev.clientX,lastY:ev.clientY,active:false,initial:orderRef.current,ghost:null,scale:1,offX:0,offY:0,
-        raf:null,lastSwap:0,scrollEl:window};
-      try{ ev.currentTarget.setPointerCapture(ev.pointerId); }catch(e){}
-      window.addEventListener("pointermove",onMove,{passive:false});
-      window.addEventListener("pointerup",onUp);
-      window.addEventListener("pointercancel",onCancel);
-      window.addEventListener("keydown",onKey);
-      window.addEventListener("blur",onCancel);
-    };
-    fns.current={onDown,finish};
-  }
-  // Si la vue disparaît pendant un drag (changement de vue), on nettoie
-  useEffect(()=>()=>{ if(fns.current) fns.current.finish(true); },[]);
-
-  const handleProps=name=>({
-    onPointerDown:e=>fns.current.onDown(name,e),
-    className:"drag-handle",
-    title:"Glisser pour déplacer le panneau",
-    role:"button","aria-label":`Déplacer ${name}`,
-    style:{touchAction:"none",userSelect:"none",WebkitUserSelect:"none",WebkitTouchCallout:"none",
-      cursor:dragName===name?"grabbing":"grab"},
-  });
-  const itemStyle=name=>({order:Math.max(0,order.indexOf(name)),
-    ...(dragName===name?{opacity:.3,filter:"saturate(.3)"}:{})});
-  return {order,dragName,containerRef,handleProps,itemStyle};
-}
-
-/* Poignée de déplacement : grip + avatar, à placer en tête du panneau */
-function DragHandle({name,drag,th,children}){
-  const hp=drag.handleProps(name);
-  return <div {...hp} style={{...hp.style,display:"flex",alignItems:"center",gap:5,flexShrink:0,
-    margin:"-6px 0 -6px -8px",padding:"6px 2px 6px 6px",borderRadius:10}}>
-    <GripIcon color={th.textMute}/>
-    {children}
-  </div>;
-}
-
 /* ═══════════════════════════════════════
    TV VIEW
 ═══════════════════════════════════════ */
-function TVView({tasks,members,onSwitch,dark,onToggleTheme,th,onToggle,onDelete,tvSaveTask,tvCleanDone,onReorder}){
+function TVView({tasks,members,onSwitch,dark,onToggleTheme,th,onToggle,onDelete,tvSaveTask,tvCleanDone}){
   const [clock,setClock]=useState(new Date());
-  const [tvMode,setTvMode]=useState("team");
+  const [tvMode,setTvMode]=useState("all");
   const [zoom,setZoom]=useState(()=>parseFloat(localStorage.getItem("tvZoom")||"1"));
   const [tvForm,setTvForm]=useState(null);
   const [showTvMultiForm,setShowTvMultiForm]=useState(false);
@@ -555,7 +315,7 @@ function TVView({tasks,members,onSwitch,dark,onToggleTheme,th,onToggle,onDelete,
         <div>
           <div className="font-signs" style={{fontWeight:900,fontSize:22,color:th.text,lineHeight:1}}>TEAM BOARD</div>
           <div style={{fontSize:9,color:th.textGhost,letterSpacing:".1em",fontFamily:"'SIGNS',system-ui"}}>
-            LIVE · SEMAINE {weekNum(clock)} · {clock.toLocaleDateString("fr-FR",{weekday:"long",day:"2-digit",month:"long"}).toUpperCase()}
+            LIVE · {clock.toLocaleDateString("fr-FR",{weekday:"long",day:"2-digit",month:"long"}).toUpperCase()}
           </div>
         </div>
       </div>
@@ -592,9 +352,7 @@ function TVView({tasks,members,onSwitch,dark,onToggleTheme,th,onToggle,onDelete,
       <div style={{textAlign:"right",paddingLeft:8}}>
         <div className="font-signs" style={{fontSize:36,color:th.text,fontWeight:900,lineHeight:1}}>
           {clock.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</div>
-        <div style={{fontSize:9,color:th.textGhost,marginTop:2,fontFamily:"'SIGNS',system-ui",letterSpacing:".06em"}}>
-          S{weekNum(clock)} · {clock.getSeconds()}s
-        </div>
+        <div style={{fontSize:9,color:th.textGhost,marginTop:2}}>{clock.getSeconds()}s</div>
       </div>
       <ThemeSwitch dark={dark} onToggle={onToggleTheme}/>
       <button onClick={zoomDown} style={{...btnStyle,color:"#FF9F0A",opacity:zoom===1?.35:1}} disabled={zoom===1}>🔍−</button>
@@ -605,8 +363,8 @@ function TVView({tasks,members,onSwitch,dark,onToggleTheme,th,onToggle,onDelete,
     {tvMode==="all"
       ?<TVAllMode tasks={tasks} pending={pending} done={done} members={members} th={th} onToggle={onToggle} onDelete={onDelete} onEdit={tvOpenEdit}/>
       :tvMode==="daily"
-      ?<TVDailyMode tasks={tasks} members={members} th={th} onToggle={onToggle} onDelete={onDelete} onAddTask={tvOpenAdd} onEdit={tvOpenEdit} onCleanDone={tvHandleCleanDone} onReorder={onReorder}/>
-      :<TVTeamMode tasks={tasks} members={members} th={th} onToggle={onToggle} onDelete={onDelete} onAddTask={tvOpenAdd} onEdit={tvOpenEdit} onCleanDone={tvHandleCleanDone} onShowMultiAssign={()=>setShowTvMultiForm(true)} onReorder={onReorder}/>}
+      ?<TVDailyMode tasks={tasks} members={members} th={th} onToggle={onToggle} onDelete={onDelete} onAddTask={tvOpenAdd} onEdit={tvOpenEdit} onCleanDone={tvHandleCleanDone}/>
+      :<TVTeamMode tasks={tasks} members={members} th={th} onToggle={onToggle} onDelete={onDelete} onAddTask={tvOpenAdd} onEdit={tvOpenEdit} onShowMultiAssign={()=>setShowTvMultiForm(true)}/>}
     {TVConfirmModal}
     {tvForm&&tvSaveTask&&<TaskForm members={members} task={tvForm.task} defaultAssignee={tvForm.defaultAssignee}
       onSave={async form=>{await tvSaveTask(form);setTvForm(null);}}
@@ -679,26 +437,23 @@ function TVAllMode({tasks,pending,done,members,th,onToggle,onDelete,onEdit}){
   </div>;
 }
 
-function TVDailyMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onCleanDone,onReorder}){
-  const drag=useMemberDrag(members,onReorder);
+function TVDailyMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onCleanDone}){
   const withDaily=members.filter(m=>tasks.some(t=>t.assignee===m&&t.category==="Daily"));
   const cols=Math.min(4,Math.max(2,Math.ceil(Math.sqrt(withDaily.length||1))));
   return <div style={{flex:1,overflowY:"auto",padding:"24px 32px"}}>
-    <div ref={drag.containerRef} style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:16,alignItems:"start"}}>
+    <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:16}}>
       {members.map(m=>{
         const all=tasks.filter(t=>t.assignee===m&&t.category==="Daily");
         if(!all.length) return null;
         const pend=all.filter(t=>!t.done),dn=all.filter(t=>t.done);
         const pct=Math.round(dn.length/all.length*100),c=mColor(m,members),allDone=pct===100;
-        return <div key={m} data-member={m} style={{...drag.itemStyle(m),background:allDone?"rgba(50,215,75,.06)":th.card,
+        return <div key={m} style={{background:allDone?"rgba(50,215,75,.06)":th.card,
           border:`1px solid ${allDone?"rgba(50,215,75,.3)":c+"30"}`,
           borderTop:`3px solid ${allDone?"#32D74B":c}`,borderRadius:14,padding:"16px 16px 14px"}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-            <DragHandle name={m} drag={drag} th={th}>
-              <div style={{width:44,height:44,borderRadius:"50%",background:c,flexShrink:0,
-                display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:18,
-                boxShadow:`0 0 0 2px ${th.bg},0 0 0 4px ${c}50`}}>{m[0].toUpperCase()}</div>
-            </DragHandle>
+            <div style={{width:44,height:44,borderRadius:"50%",background:c,flexShrink:0,
+              display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:18,
+              boxShadow:`0 0 0 2px ${th.bg},0 0 0 4px ${c}50`}}>{m[0].toUpperCase()}</div>
             <div style={{flex:1,minWidth:0}}>
               <div className="font-signs" style={{fontWeight:900,fontSize:17,color:th.text,lineHeight:1,marginBottom:3,
                 whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.toUpperCase()}</div>
@@ -718,39 +473,31 @@ function TVDailyMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onClea
             <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
-            {pend.map(t=>{const od=overdueDays(t);return <div key={t.id}
-              style={{display:"flex",alignItems:"flex-start",gap:8,
-              background:od>0?"rgba(255,69,58,.08)":th.card2,
-              border:`1px solid ${od>0?"rgba(255,69,58,"+Math.min(.15+od*.05,.55)+")":th.border}`,
-              borderRadius:8,padding:"7px 10px"}}>
+            {pend.map(t=><div key={t.id}
+              style={{display:"flex",alignItems:"center",gap:8,
+              background:th.card2,border:`1px solid ${th.border}`,borderRadius:8,padding:"7px 10px"}}>
               {/* Rond = cocher */}
               <div onClick={e=>{e.stopPropagation();onToggle&&onToggle(t);}}
                 style={{width:18,height:18,borderRadius:"50%",flexShrink:0,border:"2px solid #FF453A",
-                background:"transparent",cursor:"pointer",transition:"all .15s",display:"flex",alignItems:"center",
-                justifyContent:"center",marginTop:2}}/>
+                background:"transparent",cursor:"pointer",transition:"all .15s",display:"flex",alignItems:"center",justifyContent:"center"}}/>
               {/* Texte = éditer */}
               <span onClick={()=>onEdit&&onEdit(t)}
                 style={{fontSize:12,color:th.text2,fontWeight:800,flex:1,fontFamily:"'SIGNS',system-ui",
-                wordBreak:"break-word",lineHeight:1.4,cursor:onEdit?"pointer":"default"}}>{t.title}</span>
-              {od>0&&<span title={`En retard de ${od} jour${od>1?"s":""}`}
-                style={{background:"#FF453A",color:"#fff",fontFamily:"'SIGNS',system-ui",fontWeight:900,fontSize:10,
-                padding:"2px 6px",borderRadius:6,letterSpacing:".04em",flexShrink:0,marginTop:1,
-                boxShadow:od>=3?"0 0 8px rgba(255,69,58,.5)":"none"}}>+{od}J</span>}
-            </div>;})}
+                cursor:onEdit?"pointer":"default"}}>{t.title}</span>
+            </div>)}
             {dn.map(t=><div key={t.id}
-              style={{display:"flex",alignItems:"flex-start",gap:8,
+              style={{display:"flex",alignItems:"center",gap:8,
               background:th.card2,border:`1px solid ${th.border3}`,borderRadius:8,padding:"7px 10px",opacity:.5}}>
               {/* Rond = décocher */}
               <div onClick={e=>{e.stopPropagation();onToggle&&onToggle(t);}}
                 style={{width:18,height:18,borderRadius:"50%",flexShrink:0,background:"#32D74B",
-                cursor:"pointer",transition:"all .15s",display:"flex",alignItems:"center",
-                justifyContent:"center",marginTop:2}}>
+                cursor:"pointer",transition:"all .15s",display:"flex",alignItems:"center",justifyContent:"center"}}>
                 <span style={{color:"#fff",fontSize:9,fontWeight:900}}>✓</span>
               </div>
               {/* Texte = éditer */}
               <span onClick={()=>onEdit&&onEdit(t)}
                 style={{fontSize:12,color:th.textMute,fontWeight:800,textDecoration:"line-through",flex:1,
-                fontFamily:"'SIGNS',system-ui",wordBreak:"break-word",lineHeight:1.4,cursor:onEdit?"pointer":"default"}}>{t.title}</span>
+                fontFamily:"'SIGNS',system-ui",cursor:onEdit?"pointer":"default"}}>{t.title}</span>
               {t.done_at&&<span style={{fontFamily:"monospace",fontSize:9,color:"#32D74B",flexShrink:0}}>{fmtTime(t.done_at)}</span>}
               {onDelete&&<button onClick={e=>{e.stopPropagation();onDelete(t.id);}}
                 style={{background:"none",border:"none",cursor:"pointer",padding:"1px 3px",fontSize:11,
@@ -767,10 +514,8 @@ function TVDailyMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onClea
   </div>;
 }
 
-function TVTeamMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onCleanDone,onShowMultiAssign,onReorder}){
-  const drag=useMemberDrag(members,onReorder);
-  const activeCols=members.filter(m=>tasks.some(t=>t.assignee===m));
-  const cols=Math.min(4,Math.max(2,Math.ceil(Math.sqrt(activeCols.length||1))));
+function TVTeamMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onShowMultiAssign}){
+  const cols=Math.min(4,Math.max(2,Math.ceil(Math.sqrt(members.length||1))));
   return <div style={{flex:1,overflowY:"auto",padding:"24px 32px"}}>
     {onShowMultiAssign&&<div style={{display:"flex",justifyContent:"center",marginBottom:20}}>
       <button onClick={onShowMultiAssign}
@@ -781,22 +526,20 @@ function TVTeamMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onClean
         <span style={{fontSize:18}}>👥</span> + ASSIGNER UNE TÂCHE
       </button>
     </div>}
-    <div ref={drag.containerRef} style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:16,alignItems:"start"}}>
+    <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:16}}>
       {members.map(m=>{
         const all=tasks.filter(t=>t.assignee===m);
         if(!all.length) return null;
         const pend=[...all.filter(t=>!t.done)].sort((a,b)=>{const cr=CAT[a.category].rank-CAT[b.category].rank;return cr!==0?cr:sortByDate(a,b);}),dn=all.filter(t=>t.done);
         const pct=all.length?Math.round(dn.length/all.length*100):0;
         const c=mColor(m,members),allDone=all.length>0&&pct===100;
-        return <div key={m} data-member={m} style={{...drag.itemStyle(m),background:allDone?"rgba(50,215,75,.06)":th.card,
+        return <div key={m} style={{background:allDone?"rgba(50,215,75,.06)":th.card,
           border:`1px solid ${allDone?"rgba(50,215,75,.3)":c+"30"}`,
           borderTop:`3px solid ${allDone?"#32D74B":c}`,borderRadius:14,padding:"16px 16px 14px"}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-            <DragHandle name={m} drag={drag} th={th}>
-              <div style={{width:44,height:44,borderRadius:"50%",background:c,flexShrink:0,
-                display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:18,
-                boxShadow:`0 0 0 2px ${th.bg},0 0 0 4px ${c}50`}}>{m[0].toUpperCase()}</div>
-            </DragHandle>
+            <div style={{width:44,height:44,borderRadius:"50%",background:c,flexShrink:0,
+              display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:18,
+              boxShadow:`0 0 0 2px ${th.bg},0 0 0 4px ${c}50`}}>{m[0].toUpperCase()}</div>
             <div style={{flex:1,minWidth:0}}>
               <div className="font-signs" style={{fontWeight:900,fontSize:17,color:th.text,lineHeight:1,marginBottom:3,
                 whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.toUpperCase()}</div>
@@ -807,43 +550,38 @@ function TVTeamMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onClean
               style={{background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",border:"none",borderRadius:8,
               color:"#fff",fontWeight:800,fontSize:11,padding:"5px 10px",cursor:"pointer",flexShrink:0,
               fontFamily:"'SIGNS',system-ui",letterSpacing:".04em"}}>+ ADD</button>}
-            {onCleanDone&&dn.length>0&&<button onClick={e=>{e.stopPropagation();onCleanDone(m,dn.length);}}
-              style={{background:"rgba(255,69,58,.12)",border:"1px solid rgba(255,69,58,.3)",borderRadius:8,
-              color:"#FF453A",fontWeight:800,fontSize:11,padding:"5px 10px",cursor:"pointer",flexShrink:0,
-              fontFamily:"'SIGNS',system-ui",letterSpacing:".04em"}}>🗑 CLEAN ({dn.length})</button>}
           </div>
           <div style={{height:3,background:th.border,borderRadius:3,overflow:"hidden",marginBottom:8}}>
             <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
           </div>
-          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:260,overflowY:"auto"}}>
             {pend.map(t=>{const cfg=CAT[t.category];return <div key={t.id}
-              style={{display:"flex",alignItems:"flex-start",gap:8,
+              style={{display:"flex",alignItems:"center",gap:8,
               background:th.card2,border:`1px solid ${cfg.color+"20"}`,borderLeft:`2px solid ${cfg.color}`,
               borderRadius:8,padding:"6px 10px"}}>
               {/* Rond = cocher */}
               <div onClick={e=>{e.stopPropagation();onToggle&&onToggle(t);}}
-                style={{width:18,height:18,borderRadius:"50%",flexShrink:0,border:`2px solid ${cfg.color}`,
-                cursor:"pointer",transition:"all .15s",background:"transparent",display:"flex",alignItems:"center",
-                justifyContent:"center",marginTop:1}}/>
+                style={{width:16,height:16,borderRadius:"50%",flexShrink:0,border:`2px solid ${cfg.color}`,
+                cursor:"pointer",transition:"all .15s",background:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}/>
               {/* Texte = éditer */}
               <span onClick={()=>onEdit&&onEdit(t)}
                 style={{fontSize:11,color:th.text2,fontWeight:700,flex:1,fontFamily:"'SIGNS',system-ui",
-                wordBreak:"break-word",lineHeight:1.4,cursor:onEdit?"pointer":"default"}}>{t.title}</span>
-              <span style={{fontSize:8,color:cfg.color,fontFamily:"'SIGNS',system-ui",fontWeight:700,flexShrink:0,marginTop:2}}>{t.category.slice(0,1)}</span>
+                whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",cursor:onEdit?"pointer":"default"}}>{t.title}</span>
+              <span style={{fontSize:8,color:cfg.color,fontFamily:"'SIGNS',system-ui",fontWeight:700,flexShrink:0}}>{t.category.slice(0,1)}</span>
             </div>;})}
             {dn.map(t=><div key={t.id}
-              style={{display:"flex",alignItems:"flex-start",gap:8,
+              style={{display:"flex",alignItems:"center",gap:8,
               background:th.card2,border:`1px solid ${th.border3}`,borderRadius:8,padding:"6px 10px",opacity:.45}}>
               {/* Rond = décocher */}
               <div onClick={e=>{e.stopPropagation();onToggle&&onToggle(t);}}
-                style={{width:18,height:18,borderRadius:"50%",flexShrink:0,background:"#32D74B",
-                cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",marginTop:1}}>
+                style={{width:16,height:16,borderRadius:"50%",flexShrink:0,background:"#32D74B",
+                cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
                 <span style={{color:"#fff",fontSize:8,fontWeight:900}}>✓</span>
               </div>
               {/* Texte = éditer */}
               <span onClick={()=>onEdit&&onEdit(t)}
                 style={{fontSize:11,color:th.textMute,fontWeight:700,textDecoration:"line-through",flex:1,
-                fontFamily:"'SIGNS',system-ui",wordBreak:"break-word",lineHeight:1.4,
+                fontFamily:"'SIGNS',system-ui",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
                 cursor:onEdit?"pointer":"default"}}>{t.title}</span>
               {onDelete&&<button onClick={e=>{e.stopPropagation();onDelete(t.id);}}
                 style={{background:"none",border:"none",cursor:"pointer",padding:"1px 3px",fontSize:10,
@@ -949,7 +687,7 @@ function AdminPanel({members,setMembers,tasks,setTasks,pwdHash,setPwdHash,onClos
 
   const addMember=async()=>{
     const n=newMember.trim(); if(!n||members.includes(n)) return;
-    try{ await api.addMember(n); if(!COLOR_ORDER.includes(n)) COLOR_ORDER.push(n); setMembers(p=>[...p,n]); setNewMember(""); }
+    try{ await api.addMember(n); setMembers(p=>[...p,n]); setNewMember(""); }
     catch(e){ setError("Failed to add member: "+e.message); }
   };
   const removeMember=async name=>{
@@ -1045,10 +783,8 @@ function AdminPanel({members,setMembers,tasks,setTasks,pwdHash,setPwdHash,onClos
 const selS=(th)=>({background:th.card2,border:`1px solid ${th.border}`,borderRadius:8,color:th.textSub,fontSize:12,padding:"8px 10px",cursor:"pointer",flexShrink:0});
 const inpBase=(th)=>({background:th.input,border:`1px solid ${th.border}`,borderRadius:9,color:th.text,fontSize:13,padding:"10px 12px",width:"100%",outline:"none"});
 
-function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setError,setPendingUndo,onSwitch,dark,onToggleTheme,th,onReorder}){
+function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setError,onSwitch,dark,onToggleTheme,th}){
   const [tab,setTab]=useState("tasks");
-  const dragDaily=useMemberDrag(members,onReorder);   // panneaux du mode Daily
-  const dragTeam=useMemberDrag(members,onReorder);    // cartes de l'onglet Team
   const [mode,setMode]=useState("all");
   const [showForm,setShowForm]=useState(false), [editTask,setEditTask]=useState(null);
   const [preAssignee,setPreAssignee]=useState(null);
@@ -1075,22 +811,16 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
   const deleteTask=useCallback(async id=>{
     const t=tasks.find(x=>x.id===id);
     const ok=await confirm(`Delete "${t?.title}"?`); if(!ok) return;
-    const snap={...t};
     setTasks(p=>p.filter(t=>t.id!==id));
-    try{
-      await api.deleteTask(id);
-      if(t) setPendingUndo({items:[snap],at:Date.now()});
-    }
+    try{ await api.deleteTask(id); }
     catch(e){ setTasks(p=>[...p,t]); setError("Failed to delete task"); }
-  },[tasks,confirm,setTasks,setError,setPendingUndo]);
+  },[tasks,confirm,setTasks,setError]);
 
   const saveTask=useCallback(async form=>{
     const escalated=escalate(form);
     if(form.id){
-      const existing=tasks.find(t=>t.id===form.id);
-      const toSave={...escalated,done:existing?.done??false,done_at:existing?.done_at??null};
       setTasks(p=>p.map(t=>t.id===form.id?{...t,...escalated}:t));
-      try{ await api.updateTask(toSave); }
+      try{ await api.updateTask(escalated); }
       catch(e){ setError("Failed to update task"); }
     } else {
       try{
@@ -1119,15 +849,10 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
     if(!done.length) return;
     const ok=await confirm(`Supprimer ${done.length} tâche${done.length>1?"s":""} terminée${done.length>1?"s":""} pour ${memberName} ?`);
     if(!ok) return;
-    const snap=done.map(t=>({...t}));
     setTasks(p=>p.filter(t=>!(t.assignee===memberName&&t.done)));
-    try{
-      await Promise.all(done.map(t=>api.deleteTask(t.id)));
-      setPendingUndo({items:snap,at:Date.now(),
-        label:`${snap.length} tâche${snap.length>1?"s":""} de ${memberName} supprimée${snap.length>1?"s":""}`});
-    }
+    try{ await Promise.all(done.map(t=>api.deleteTask(t.id))); }
     catch(e){ setError("Erreur lors de la suppression"); }
-  },[tasks,confirm,setTasks,setError,setPendingUndo]);
+  },[tasks,confirm,setTasks,setError]);
 
   const ss=selS(th), ib=inpBase(th);
 
@@ -1140,7 +865,7 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
         display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>⚡</div>
       <div className="mgr-title" style={{flex:1,minWidth:0}}>
         <div className="font-signs" style={{fontWeight:900,fontSize:15,color:th.text,lineHeight:1}}>TEAM BOARD</div>
-        <div style={{fontSize:8,color:th.textFade,letterSpacing:".1em"}}>COLLABORATIVE · SEMAINE {weekNum()}</div>
+        <div style={{fontSize:8,color:th.textFade,letterSpacing:".1em"}}>COLLABORATIVE</div>
       </div>
       <div style={{display:"flex",background:th.surface2,border:`1px solid ${th.border}`,borderRadius:9,padding:2,gap:1}}>
         {[{id:"all",label:"📋 ALL"},{id:"daily",label:"🔥 DAILY"}].map(m=>(
@@ -1174,22 +899,20 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
 
     {/* Daily mode */}
     {mode==="daily"&&tab==="tasks"&&<div style={{padding:"14px"}}>
-      <div className="daily-mgr-grid" ref={dragDaily.containerRef}>
+      <div className="daily-mgr-grid">
         {members.map(m=>{
           const all=tasks.filter(t=>t.assignee===m&&t.category==="Daily");
           if(!all.length) return null;
           const pend=all.filter(t=>!t.done),dn=all.filter(t=>t.done);
           const pct=Math.round(dn.length/all.length*100),c=mColor(m,members),allDone=pct===100;
-          return <div key={m} data-member={m} style={{...dragDaily.itemStyle(m),background:allDone?"rgba(50,215,75,.06)":th.card,
+          return <div key={m} style={{background:allDone?"rgba(50,215,75,.06)":th.card,
             border:`1px solid ${allDone?"rgba(50,215,75,.3)":c+"30"}`,
             borderTop:`3px solid ${allDone?"#32D74B":c}`,borderRadius:14,padding:"13px 13px 11px"}}>
             <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:7}}>
-              <DragHandle name={m} drag={dragDaily} th={th}>
-                <div style={{width:38,height:38,borderRadius:"50%",background:c,flexShrink:0,
-                  display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:16,
-                  boxShadow:`0 0 0 2px ${th.bg},0 0 0 3.5px ${c}50`}}>{m[0].toUpperCase()}</div>
-              </DragHandle>
-              <div style={{flex:1,minWidth:0}}>
+              <div style={{width:38,height:38,borderRadius:"50%",background:c,flexShrink:0,
+                display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:16,
+                boxShadow:`0 0 0 2px ${th.bg},0 0 0 3.5px ${c}50`}}>{m[0].toUpperCase()}</div>
+              <div style={{flex:1}}>
                 <div className="font-signs" style={{fontWeight:900,fontSize:14,color:th.text,lineHeight:1,marginBottom:2}}>{m.toUpperCase()}</div>
                 <div style={{fontSize:10,color:th.textMute}}>{dn.length}/{all.length} done</div>
               </div>
@@ -1208,10 +931,8 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
               <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:4}}>
-              {pend.map(t=>{const od=overdueDays(t);return <div key={t.id} style={{display:"flex",alignItems:"center",gap:8,
-                background:od>0?"rgba(255,69,58,.08)":th.card2,
-                border:`1px solid ${od>0?"rgba(255,69,58,"+Math.min(.15+od*.05,.55)+")":th.border}`,
-                borderRadius:7,padding:"6px 9px"}}>
+              {pend.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:8,
+                background:th.card2,border:`1px solid ${th.border}`,borderRadius:7,padding:"6px 9px"}}>
                 {/* Rond 20px = cocher */}
                 <div onClick={()=>toggleDone(t)}
                   style={{width:20,height:20,borderRadius:"50%",flexShrink:0,border:"2px solid #FF453A",
@@ -1219,10 +940,7 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
                 {/* Texte = éditer */}
                 <span onClick={()=>openEdit(t)}
                   style={{fontSize:11,color:th.text2,flex:1,fontFamily:"'SIGNS',system-ui",fontWeight:700,cursor:"pointer"}}>{t.title}</span>
-                {od>0&&<span title={`En retard de ${od} jour${od>1?"s":""}`}
-                  style={{background:"#FF453A",color:"#fff",fontFamily:"'SIGNS',system-ui",fontWeight:900,fontSize:9,
-                  padding:"2px 5px",borderRadius:5,letterSpacing:".04em",flexShrink:0}}>+{od}J</span>}
-              </div>;})}
+              </div>)}
               {dn.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:8,
                 background:th.card2,border:`1px solid ${th.border3}`,borderRadius:7,padding:"6px 9px",opacity:.5}}>
                 {/* Rond 20px = décocher */}
@@ -1304,18 +1022,15 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
         🔒 <span>Member management requires <button onClick={()=>setShowLogin(true)}
           style={{background:"none",border:"none",color:"#FF9F0A",fontWeight:700,cursor:"pointer",textDecoration:"underline",padding:0}}>admin access</button></span>
       </div>}
-      <div ref={dragTeam.containerRef} style={{display:"flex",flexDirection:"column"}}>
       {members.map(m=>{
         const mt=tasks.filter(t=>t.assignee===m),md=mt.filter(t=>t.done);
         const p2=mt.length?Math.round(md.length/mt.length*100):0,c=mColor(m,members);
         const open=[...mt.filter(t=>!t.done)].sort((a,b)=>{const cr=CAT[a.category].rank-CAT[b.category].rank;return cr!==0?cr:sortByDate(a,b);}),overdue=open.filter(t=>t.due_date&&new Date(t.due_date)<today());
-        return <div key={m} data-member={m} style={{...dragTeam.itemStyle(m),background:th.card,border:`1px solid ${overdue.length?"#FF453A30":th.border2}`,
+        return <div key={m} style={{background:th.card,border:`1px solid ${overdue.length?"#FF453A30":th.border2}`,
           borderRadius:12,padding:"13px 14px",marginBottom:9}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-            <DragHandle name={m} drag={dragTeam} th={th}>
-              <Avatar name={m} members={members} size={38} th={th}/>
-            </DragHandle>
-            <div style={{flex:1,minWidth:0}}>
+            <Avatar name={m} members={members} size={38} th={th}/>
+            <div style={{flex:1}}>
               <div className="font-signs" style={{fontWeight:900,fontSize:15,color:th.text,lineHeight:1,marginBottom:3}}>{m.toUpperCase()}</div>
               <div style={{fontSize:11,color:th.textMute,display:"flex",gap:8}}>
                 {md.length}/{mt.length} done
@@ -1331,25 +1046,16 @@ function ManagerView({tasks,setTasks,members,setMembers,pwdHash,setPwdHash,setEr
             <div style={{height:"100%",width:`${p2}%`,background:p2===100?"#32D74B":c,borderRadius:3}}/>
           </div>
           {open.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-            {open.map(t=><div key={t.id}
+            {open.map(t=><span key={t.id} onClick={()=>openEdit(t)}
               style={{fontSize:10,background:CAT[t.category].bg,color:CAT[t.category].color,
-              border:`1px solid ${CAT[t.category].color}30`,padding:"3px 9px 3px 5px",borderRadius:20,
-              fontFamily:"'SIGNS',system-ui",fontWeight:700,
-              display:"inline-flex",alignItems:"center",gap:6}}>
-              {/* Rond = cocher la tâche */}
-              <div onClick={e=>{e.stopPropagation();toggleDone(t);}} role="button" aria-label="Cocher la tâche"
-                style={{width:14,height:14,borderRadius:"50%",flexShrink:0,
-                border:`2px solid ${CAT[t.category].color}`,background:"transparent",cursor:"pointer"}}/>
-              {/* Texte = ouvrir l'éditeur */}
-              <span onClick={()=>openEdit(t)} style={{cursor:"pointer"}}>
-                {CAT[t.category].icon} {t.title}
-                {t.due_date&&<span style={{opacity:.6}}> · {fmtDue(t.due_date).text}</span>}
-              </span>
-            </div>)}
+              border:`1px solid ${CAT[t.category].color}30`,padding:"3px 9px",borderRadius:20,
+              fontFamily:"'SIGNS',system-ui",fontWeight:700,cursor:"pointer"}}>
+              {CAT[t.category].icon} {t.title}
+              {t.due_date&&<span style={{opacity:.6}}> · {fmtDue(t.due_date).text}</span>}
+            </span>)}
           </div>}
         </div>;
       })}
-      </div>
     </div>}
 
     {showForm&&<TaskForm task={editTask} members={members} defaultAssignee={preAssignee} onSave={saveTask} onClose={()=>{setShowForm(false);setEditTask(null);setPreAssignee(null);}} th={th}/>}
@@ -1589,57 +1295,8 @@ function App(){
   const [loading,setLoading]= useState(true);
   const [error,setError]    = useState(null);
   const [toasts,setToasts]  = useState([]);
-  const [pendingUndo,setPendingUndo] = useState(null);
   const [dark,setDark]      = useState(()=>localStorage.getItem("theme")!=="light");
   const prevDone            = useRef(new Set());
-  const lastReorder         = useRef(0);
-
-  // Réordonnancement des panneaux membres (glisser-déposer) : optimiste, puis sauvegarde en base
-  const reorderMembers=useCallback(async order=>{
-    const prev=members;
-    lastReorder.current=Date.now();
-    setMembers(order);
-    try{
-      const rows=await api.reorderMembers(order);
-      setColorOrder(rows);
-      setMembers(rows.map(r=>r.name));
-    }catch(e){
-      lastReorder.current=0;
-      setMembers(prev);
-      setError("Impossible d'enregistrer le nouvel ordre des panneaux");
-    }
-  },[members]);
-
-  // Auto-dismiss du toast Undo après 6s
-  useEffect(()=>{
-    if(!pendingUndo) return;
-    const t=setTimeout(()=>setPendingUndo(null),6000);
-    return ()=>clearTimeout(t);
-  },[pendingUndo]);
-
-  const restoreUndo=useCallback(async()=>{
-    if(!pendingUndo) return;
-    const items=pendingUndo.items;
-    setPendingUndo(null);
-    try{
-      const restored=[];
-      for(const t of items){
-        const created=await api.addTask({
-          title:t.title, assignee:t.assignee, category:t.category,
-          original_category:t.original_category, due_date:t.due_date||null
-        });
-        if(t.done){
-          const updated={...created,done:true,done_at:t.done_at||new Date().toISOString()};
-          await api.updateTask(updated);
-          restored.push(updated);
-          prevDone.current.add(updated.id);
-        } else {
-          restored.push(created);
-        }
-      }
-      setTasks(p=>[...p,...restored]);
-    }catch(e){ setError("Erreur restauration : "+e.message); }
-  },[pendingUndo]);
 
   const th = dark ? DARK : LIGHT;
 
@@ -1654,8 +1311,7 @@ function App(){
       .then(([t,m])=>{
         const escalated=t.map(escalate);
         setTasks(escalated);
-        setColorOrder(m);
-        setMembers(m.map(r=>r.name));
+        setMembers(m);
         prevDone.current=new Set(escalated.filter(x=>x.done).map(x=>x.id));
         setLoading(false);
       })
@@ -1676,11 +1332,7 @@ function App(){
           }
           if(!task.done) prevDone.current.delete(task.id);
         });
-        setTasks(escalated);
-        setColorOrder(m);
-        // Juste après un réordonnancement local, on laisse le PUT arriver en base
-        // avant de reprendre l'ordre du serveur (évite un aller-retour visuel).
-        if(Date.now()-lastReorder.current>REORDER_GRACE_MS) setMembers(m.map(r=>r.name));
+        setTasks(escalated); setMembers(m);
       }catch(e){}
     };
     const i=setInterval(poll, POLL_MS);
@@ -1702,23 +1354,16 @@ function App(){
   const tvCleanDone=useCallback(async memberName=>{
     const done=tasks.filter(t=>t.assignee===memberName&&t.done);
     if(!done.length) return;
-    const snap=done.map(t=>({...t}));
     setTasks(p=>p.filter(t=>!(t.assignee===memberName&&t.done)));
-    try{
-      await Promise.all(done.map(t=>api.deleteTask(t.id)));
-      setPendingUndo({items:snap,at:Date.now(),
-        label:`${snap.length} tâche${snap.length>1?"s":""} de ${memberName} supprimée${snap.length>1?"s":""}`});
-    }
+    try{ await Promise.all(done.map(t=>api.deleteTask(t.id))); }
     catch(e){ setError("Erreur suppression"); }
   },[tasks,setTasks,setError]);
 
   const tvSaveTask=useCallback(async form=>{
     const escalated=escalate(form);
     if(form.id){
-      const existing=tasks.find(t=>t.id===form.id);
-      const toSave={...escalated,done:existing?.done??false,done_at:existing?.done_at??null};
       setTasks(p=>p.map(t=>t.id===form.id?{...t,...escalated}:t));
-      try{ await api.updateTask(toSave); }
+      try{ await api.updateTask(escalated); }
       catch(e){ setError("Failed to update task"); }
     } else {
       try{
@@ -1726,17 +1371,13 @@ function App(){
         setTasks(p=>[...p,created]);
       }catch(e){ setError("Failed to add task: "+e.message); }
     }
-  },[tasks,setTasks,setError]);
+  },[setTasks,setError]);
 
   const tvDelete=useCallback(async id=>{
-    const snap=tasks.find(x=>x.id===id);
     setTasks(p=>p.filter(t=>t.id!==id));
-    try{
-      await api.deleteTask(id);
-      if(snap) setPendingUndo({items:[{...snap}],at:Date.now()});
-    }
+    try{ await api.deleteTask(id); }
     catch(e){ setError("Erreur suppression"); }
-  },[tasks,setTasks,setError]);
+  },[setTasks,setError]);
 
   // Apply bg color to body
   useEffect(()=>{ document.body.style.background=th.bg; },[th]);
@@ -1751,30 +1392,18 @@ function App(){
   return <div style={{fontFamily:"'SIGNS',system-ui,sans-serif"}}>
     <Toast toasts={toasts} th={th}/>
     <ErrorBanner msg={error} onClose={()=>setError(null)}/>
-    <UndoToast pendingUndo={pendingUndo} onUndo={restoreUndo} onDismiss={()=>setPendingUndo(null)} th={th}/>
     {view==="tv"
       ?<TVView tasks={tasks} members={members} dark={dark} onToggleTheme={toggleTheme} th={th}
           onToggle={tvToggle} onDelete={tvDelete} tvSaveTask={tvSaveTask} tvCleanDone={tvCleanDone}
-          onReorder={reorderMembers}
           onSwitch={()=>setView("manager")}/>
       :<ManagerView tasks={tasks} setTasks={setTasks} members={members} setMembers={setMembers}
-          pwdHash={pwdHash} setPwdHash={setPwdHash} setError={setError} setPendingUndo={setPendingUndo}
-          dark={dark} onToggleTheme={toggleTheme} th={th} onReorder={reorderMembers}
+          pwdHash={pwdHash} setPwdHash={setPwdHash} setError={setError}
+          dark={dark} onToggleTheme={toggleTheme} th={th}
           onSwitch={()=>setView("tv")}/>}
   </div>;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
-</script>
-<script>
-// Enregistrement du service worker pour activer l'installation PWA
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((err) => {
-      console.warn('SW registration failed:', err);
-    });
-  });
-}
 </script>
 </body>
 </html>

@@ -7,8 +7,16 @@
 CREATE TABLE IF NOT EXISTS members (
   id         SERIAL PRIMARY KEY,
   name       TEXT NOT NULL UNIQUE,
+  position   INTEGER,                         -- ordre d'affichage des panneaux (glisser-déposer)
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Migration pour une base existante (appliquée aussi automatiquement par api/members.js
+-- au premier appel, donc facultative ici) :
+ALTER TABLE members ADD COLUMN IF NOT EXISTS position INTEGER;
+UPDATE members AS m SET position = s.rn
+FROM (SELECT id, row_number() OVER (ORDER BY created_at ASC) AS rn FROM members) AS s
+WHERE m.id = s.id AND m.position IS NULL;
 
 CREATE TABLE IF NOT EXISTS tasks (
   id                SERIAL       PRIMARY KEY,
