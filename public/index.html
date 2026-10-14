@@ -681,10 +681,8 @@ function TVAllMode({tasks,pending,done,members,th,onToggle,onDelete,onEdit}){
 
 function TVDailyMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onCleanDone,onReorder}){
   const drag=useMemberDrag(members,onReorder);
-  const withDaily=members.filter(m=>tasks.some(t=>t.assignee===m&&t.category==="Daily"));
-  const cols=Math.min(4,Math.max(2,Math.ceil(Math.sqrt(withDaily.length||1))));
-  return <div style={{flex:1,overflowY:"auto",padding:"24px 32px"}}>
-    <div ref={drag.containerRef} style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:16,alignItems:"start"}}>
+  return <div style={{flex:1,overflowY:"auto",padding:"12px 16px"}}>
+    <div ref={drag.containerRef} style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))",gap:10,alignItems:"start"}}>
       {members.map(m=>{
         const all=tasks.filter(t=>t.assignee===m&&t.category==="Daily");
         if(!all.length) return null;
@@ -692,32 +690,32 @@ function TVDailyMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onClea
         const pct=Math.round(dn.length/all.length*100),c=mColor(m,members),allDone=pct===100;
         return <div key={m} data-member={m} style={{...drag.itemStyle(m),background:allDone?"rgba(50,215,75,.06)":th.card,
           border:`1px solid ${allDone?"rgba(50,215,75,.3)":c+"30"}`,
-          borderTop:`3px solid ${allDone?"#32D74B":c}`,borderRadius:14,padding:"16px 16px 14px"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+          borderTop:`3px solid ${allDone?"#32D74B":c}`,borderRadius:12,padding:"8px 10px 8px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:6}}>
             <DragHandle name={m} drag={drag} th={th}>
-              <div style={{width:44,height:44,borderRadius:"50%",background:c,flexShrink:0,
-                display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:18,
-                boxShadow:`0 0 0 2px ${th.bg},0 0 0 4px ${c}50`}}>{m[0].toUpperCase()}</div>
+              <div style={{width:28,height:28,borderRadius:"50%",background:c,flexShrink:0,
+                display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:13,
+                boxShadow:`0 0 0 2px ${th.bg},0 0 0 3px ${c}50`}}>{m[0].toUpperCase()}</div>
             </DragHandle>
-            <div style={{flex:1,minWidth:0}}>
-              <div className="font-signs" style={{fontWeight:900,fontSize:17,color:th.text,lineHeight:1,marginBottom:3,
-                whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.toUpperCase()}</div>
-              <div style={{fontSize:11,color:th.textMute}}>{dn.length}/{all.length} done</div>
+            <div className="font-signs" title={m} style={{flex:1,minWidth:0,fontWeight:900,fontSize:14,color:th.text,lineHeight:1,letterSpacing:".02em",
+              whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.toUpperCase()}</div>
+            <div className="font-signs" style={{fontWeight:900,fontSize:13,flexShrink:0,color:allDone?"#32D74B":pct>50?"#FF9F0A":c}}>{pct}%</div>
+            {onAddTask&&<button onClick={e=>{e.stopPropagation();onAddTask(m);}} title={`Ajouter une tâche à ${m}`}
+              style={{background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",border:"none",borderRadius:7,
+              color:"#fff",fontWeight:800,fontSize:13,width:24,height:24,lineHeight:1,padding:0,cursor:"pointer",flexShrink:0,
+              fontFamily:"'SIGNS',system-ui"}}>+</button>}
+            {onCleanDone&&dn.length>0&&<button onClick={e=>{e.stopPropagation();onCleanDone(m,dn.length);}} title={`Supprimer les ${dn.length} tâche${dn.length>1?"s":""} terminée${dn.length>1?"s":""}`}
+              style={{background:"rgba(255,69,58,.12)",border:"1px solid rgba(255,69,58,.3)",borderRadius:7,
+              color:"#FF453A",fontWeight:800,fontSize:10,height:24,padding:"0 6px",cursor:"pointer",flexShrink:0,
+              fontFamily:"'SIGNS',system-ui",display:"flex",alignItems:"center",gap:2}}>🗑{dn.length}</button>}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+            <div style={{flex:1,height:3,background:th.border,borderRadius:3,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
             </div>
-            <div className="font-signs" style={{fontWeight:900,fontSize:22,color:allDone?"#32D74B":pct>50?"#FF9F0A":c}}>{pct}%</div>
-            {onAddTask&&<button onClick={e=>{e.stopPropagation();onAddTask(m);}}
-              style={{background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",border:"none",borderRadius:8,
-              color:"#fff",fontWeight:800,fontSize:11,padding:"5px 10px",cursor:"pointer",flexShrink:0,
-              fontFamily:"'SIGNS',system-ui",letterSpacing:".04em"}}>+ ADD</button>}
-            {onCleanDone&&dn.length>0&&<button onClick={e=>{e.stopPropagation();onCleanDone(m,dn.length);}}
-              style={{background:"rgba(255,69,58,.12)",border:"1px solid rgba(255,69,58,.3)",borderRadius:8,
-              color:"#FF453A",fontWeight:800,fontSize:11,padding:"5px 10px",cursor:"pointer",flexShrink:0,
-              fontFamily:"'SIGNS',system-ui",letterSpacing:".04em"}}>🗑 CLEAN ({dn.length})</button>}
+            <span style={{fontSize:9,color:th.textMute,fontFamily:"monospace",flexShrink:0,lineHeight:1}}>{dn.length}/{all.length}</span>
           </div>
-          <div style={{height:3,background:th.border,borderRadius:3,overflow:"hidden",marginBottom:8}}>
-            <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <div style={{display:"flex",flexDirection:"column",gap:3}}>
             {pend.map(t=>{const od=overdueDays(t);return <div key={t.id}
               style={{display:"flex",alignItems:"flex-start",gap:8,
               background:od>0?"rgba(255,69,58,.08)":th.card2,
@@ -758,8 +756,8 @@ function TVDailyMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onClea
             </div>)}
           </div>
           {allDone&&<div style={{background:"rgba(50,215,75,.1)",border:"1px solid rgba(50,215,75,.3)",
-            borderRadius:8,padding:"6px",textAlign:"center",marginTop:8}}>
-            <span className="font-signs" style={{fontSize:13,color:"#32D74B",fontWeight:800}}>✅ ALL DONE!</span>
+            borderRadius:8,padding:"4px",textAlign:"center",marginTop:6}}>
+            <span className="font-signs" style={{fontSize:12,color:"#32D74B",fontWeight:800}}>✅ ALL DONE!</span>
           </div>}
         </div>;
       })}
@@ -769,19 +767,17 @@ function TVDailyMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onClea
 
 function TVTeamMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onCleanDone,onShowMultiAssign,onReorder}){
   const drag=useMemberDrag(members,onReorder);
-  const activeCols=members.filter(m=>tasks.some(t=>t.assignee===m));
-  const cols=Math.min(4,Math.max(2,Math.ceil(Math.sqrt(activeCols.length||1))));
-  return <div style={{flex:1,overflowY:"auto",padding:"24px 32px"}}>
-    {onShowMultiAssign&&<div style={{display:"flex",justifyContent:"center",marginBottom:20}}>
+  return <div style={{flex:1,overflowY:"auto",padding:"12px 16px"}}>
+    {onShowMultiAssign&&<div style={{display:"flex",justifyContent:"center",marginBottom:10}}>
       <button onClick={onShowMultiAssign}
-        style={{background:"linear-gradient(135deg,#0A84FF,#32ADE6)",border:"none",borderRadius:12,
-        color:"#fff",fontWeight:800,fontSize:13,padding:"12px 32px",cursor:"pointer",
+        style={{background:"linear-gradient(135deg,#0A84FF,#32ADE6)",border:"none",borderRadius:10,
+        color:"#fff",fontWeight:800,fontSize:12,padding:"7px 22px",cursor:"pointer",
         boxShadow:"0 4px 20px rgba(10,132,255,.35)",fontFamily:"'SIGNS',system-ui",letterSpacing:".06em",
         display:"flex",alignItems:"center",gap:9}}>
-        <span style={{fontSize:18}}>👥</span> + ASSIGNER UNE TÂCHE
+        <span style={{fontSize:15}}>👥</span> + ASSIGNER UNE TÂCHE
       </button>
     </div>}
-    <div ref={drag.containerRef} style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:16,alignItems:"start"}}>
+    <div ref={drag.containerRef} style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))",gap:10,alignItems:"start"}}>
       {members.map(m=>{
         const all=tasks.filter(t=>t.assignee===m);
         if(!all.length) return null;
@@ -790,32 +786,32 @@ function TVTeamMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onClean
         const c=mColor(m,members),allDone=all.length>0&&pct===100;
         return <div key={m} data-member={m} style={{...drag.itemStyle(m),background:allDone?"rgba(50,215,75,.06)":th.card,
           border:`1px solid ${allDone?"rgba(50,215,75,.3)":c+"30"}`,
-          borderTop:`3px solid ${allDone?"#32D74B":c}`,borderRadius:14,padding:"16px 16px 14px"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+          borderTop:`3px solid ${allDone?"#32D74B":c}`,borderRadius:12,padding:"8px 10px 8px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:6}}>
             <DragHandle name={m} drag={drag} th={th}>
-              <div style={{width:44,height:44,borderRadius:"50%",background:c,flexShrink:0,
-                display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:18,
-                boxShadow:`0 0 0 2px ${th.bg},0 0 0 4px ${c}50`}}>{m[0].toUpperCase()}</div>
+              <div style={{width:28,height:28,borderRadius:"50%",background:c,flexShrink:0,
+                display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:13,
+                boxShadow:`0 0 0 2px ${th.bg},0 0 0 3px ${c}50`}}>{m[0].toUpperCase()}</div>
             </DragHandle>
-            <div style={{flex:1,minWidth:0}}>
-              <div className="font-signs" style={{fontWeight:900,fontSize:17,color:th.text,lineHeight:1,marginBottom:3,
-                whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.toUpperCase()}</div>
-              <div style={{fontSize:11,color:th.textMute}}>{dn.length}/{all.length} done</div>
+            <div className="font-signs" title={m} style={{flex:1,minWidth:0,fontWeight:900,fontSize:14,color:th.text,lineHeight:1,letterSpacing:".02em",
+              whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.toUpperCase()}</div>
+            <div className="font-signs" style={{fontWeight:900,fontSize:13,flexShrink:0,color:allDone?"#32D74B":pct>50?"#FF9F0A":c}}>{pct}%</div>
+            {onAddTask&&<button onClick={e=>{e.stopPropagation();onAddTask(m);}} title={`Ajouter une tâche à ${m}`}
+              style={{background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",border:"none",borderRadius:7,
+              color:"#fff",fontWeight:800,fontSize:13,width:24,height:24,lineHeight:1,padding:0,cursor:"pointer",flexShrink:0,
+              fontFamily:"'SIGNS',system-ui"}}>+</button>}
+            {onCleanDone&&dn.length>0&&<button onClick={e=>{e.stopPropagation();onCleanDone(m,dn.length);}} title={`Supprimer les ${dn.length} tâche${dn.length>1?"s":""} terminée${dn.length>1?"s":""}`}
+              style={{background:"rgba(255,69,58,.12)",border:"1px solid rgba(255,69,58,.3)",borderRadius:7,
+              color:"#FF453A",fontWeight:800,fontSize:10,height:24,padding:"0 6px",cursor:"pointer",flexShrink:0,
+              fontFamily:"'SIGNS',system-ui",display:"flex",alignItems:"center",gap:2}}>🗑{dn.length}</button>}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+            <div style={{flex:1,height:3,background:th.border,borderRadius:3,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
             </div>
-            <div className="font-signs" style={{fontWeight:900,fontSize:22,color:allDone?"#32D74B":pct>50?"#FF9F0A":c}}>{pct}%</div>
-            {onAddTask&&<button onClick={e=>{e.stopPropagation();onAddTask(m);}}
-              style={{background:"linear-gradient(135deg,#5E5CE6,#BF5AF2)",border:"none",borderRadius:8,
-              color:"#fff",fontWeight:800,fontSize:11,padding:"5px 10px",cursor:"pointer",flexShrink:0,
-              fontFamily:"'SIGNS',system-ui",letterSpacing:".04em"}}>+ ADD</button>}
-            {onCleanDone&&dn.length>0&&<button onClick={e=>{e.stopPropagation();onCleanDone(m,dn.length);}}
-              style={{background:"rgba(255,69,58,.12)",border:"1px solid rgba(255,69,58,.3)",borderRadius:8,
-              color:"#FF453A",fontWeight:800,fontSize:11,padding:"5px 10px",cursor:"pointer",flexShrink:0,
-              fontFamily:"'SIGNS',system-ui",letterSpacing:".04em"}}>🗑 CLEAN ({dn.length})</button>}
+            <span style={{fontSize:9,color:th.textMute,fontFamily:"monospace",flexShrink:0,lineHeight:1}}>{dn.length}/{all.length}</span>
           </div>
-          <div style={{height:3,background:th.border,borderRadius:3,overflow:"hidden",marginBottom:8}}>
-            <div style={{height:"100%",width:`${pct}%`,background:allDone?"#32D74B":c,borderRadius:3}}/>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <div style={{display:"flex",flexDirection:"column",gap:3}}>
             {pend.map(t=>{const cfg=CAT[t.category];return <div key={t.id}
               style={{display:"flex",alignItems:"flex-start",gap:8,
               background:th.card2,border:`1px solid ${cfg.color+"20"}`,borderLeft:`2px solid ${cfg.color}`,
@@ -851,8 +847,8 @@ function TVTeamMode({tasks,members,th,onToggle,onDelete,onAddTask,onEdit,onClean
             </div>)}
           </div>
           {allDone&&<div style={{background:"rgba(50,215,75,.1)",border:"1px solid rgba(50,215,75,.3)",
-            borderRadius:8,padding:"6px",textAlign:"center",marginTop:8}}>
-            <span className="font-signs" style={{fontSize:13,color:"#32D74B",fontWeight:800}}>✅ ALL DONE!</span>
+            borderRadius:8,padding:"4px",textAlign:"center",marginTop:6}}>
+            <span className="font-signs" style={{fontSize:12,color:"#32D74B",fontWeight:800}}>✅ ALL DONE!</span>
           </div>}
         </div>;
       })}
